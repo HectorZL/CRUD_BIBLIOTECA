@@ -1,0 +1,112 @@
+{% extends "auth/base_auth.html" %}
+
+{% block title %}Registrar Usuario - Sistema de Biblioteca{% endblock %}
+
+{% block content %}
+    <form method="POST" action="{{ url_for('auth.register') }}" class="needs-validation" novalidate>
+        <img class="mb-4" src="https://getbootstrap.com/docs/5.1/assets/brand/bootstrap-logo.svg" alt="" width="72" height="57">
+        <h1 class="h3 mb-3 fw-normal">Registrar Nuevo Usuario</h1>
+        
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <div class="form-floating">
+                    <input type="text" class="form-control" id="username" name="username" placeholder="Usuario" required>
+                    <label for="username">Usuario</label>
+                    <div class="invalid-feedback">
+                        Por favor ingrese un nombre de usuario.
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6 mb-3">
+                <div class="form-floating">
+                    <input type="email" class="form-control" id="email" name="email" placeholder="correo@ejemplo.com" required>
+                    <label for="email">Correo electrónico</label>
+                    <div class="invalid-feedback">
+                        Por favor ingrese un correo electrónico válido.
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="form-floating mb-3">
+            <input type="text" class="form-control" id="full_name" name="full_name" placeholder="Nombre completo" required>
+            <label for="full_name">Nombre completo</label>
+            <div class="invalid-feedback">
+                Por favor ingrese el nombre completo.
+            </div>
+        </div>
+        
+        <div class="row">
+            <div class="col-md-6 mb-3">
+                <div class="form-floating">
+                    <input type="password" class="form-control" id="password" name="password" placeholder="Contraseña" required>
+                    <label for="password">Contraseña</label>
+                    <div class="invalid-feedback">
+                        Por favor ingrese una contraseña.
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-6 mb-3">
+                <div class="form-floating">
+                    <input type="password" class="form-control" id="confirm_password" name="confirm_password" placeholder="Confirmar contraseña" required>
+                    <label for="confirm_password">Confirmar contraseña</label>
+                    <div class="invalid-feedback">
+                        Las contraseñas deben coincidir.
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="form-check mb-3">
+            <input class="form-check-input" type="checkbox" id="is_admin" name="is_admin">
+            <label class="form-check-label" for="is_admin">
+                ¿Es administrador?
+            </label>
+        </div>
+        
+        <div class="d-grid gap-2">
+            <button class="btn btn-auth btn-lg" type="submit">Registrar Usuario</button>
+            <a href="{{ url_for('main.index') }}" class="btn btn-outline-secondary btn-lg">Cancelar</a>
+        </div>
+    </form>
+    
+    <script>
+    // Validación del formulario con Bootstrap
+    (function () {
+        'use strict'
+        
+        // Obtener todos los formularios a los que queremos aplicar estilos de validación de Bootstrap personalizados
+        var forms = document.querySelectorAll('.needs-validation')
+        
+        // Validación personalizada para confirmar contraseña
+        var password = document.getElementById('password')
+        var confirm_password = document.getElementById('confirm_password');
+        
+        function validatePassword() {
+            if (password.value != confirm_password.value) {
+                confirm_password.setCustomValidity("Las contraseñas no coinciden");
+            } else {
+                confirm_password.setCustomValidity('');
+            }
+        }
+        
+        password.onchange = validatePassword;
+        confirm_password.onkeyup = validatePassword;
+        
+        // Bucle sobre ellos y evitar el envío
+        Array.prototype.slice.call(forms)
+            .forEach(function (form) {
+                form.addEventListener('submit', function (event) {
+                    if (!form.checkValidity()) {
+                        event.preventDefault()
+                        event.stopPropagation()
+                    }
+                    
+                    form.classList.add('was-validated')
+                }, false)
+            })
+    })()
+    </script>
+{% endblock %}
