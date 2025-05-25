@@ -1,20 +1,12 @@
 from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, current_app
 from .db import get_db_connection, get_cursor
+from .decorators import login_required, admin_required
 from datetime import datetime, timedelta
 import json
 import logging
-from functools import wraps
 
 # Configurar logging
 logger = logging.getLogger(__name__)
-
-def login_required(f):
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            return redirect(url_for('auth.login'))
-        return f(*args, **kwargs)
-    return decorated_function
 
 bp = Blueprint('main', __name__, url_prefix='')
 

@@ -7,25 +7,94 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
     <style>
+        :root {
+            --bg-color: #ffffff;
+            --text-color: #212529;
+            --sidebar-bg: #f8f9fa;
+            --card-bg: #ffffff;
+            --border-color: #dee2e6;
+            --link-color: #0d6efd;
+            --link-hover-color: #0a58ca;
+        }
+        
+        [data-bs-theme="dark"] {
+            --bg-color: #212529;
+            --text-color: #f8f9fa;
+            --sidebar-bg: #2c3034;
+            --card-bg: #2c3034;
+            --border-color: #495057;
+            --link-color: #85d1ff;
+            --link-hover-color: #b6e0ff;
+        }
+        
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            transition: background-color 0.3s, color 0.3s;
+        }
+        
         .sidebar {
             min-height: calc(100vh - 56px);
-            background-color: #f8f9fa;
+            background-color: var(--sidebar-bg);
             padding-top: 1rem;
+            transition: background-color 0.3s;
         }
+        
         .sidebar .nav-link {
-            color: #333;
+            color: var(--text-color);
             border-radius: 5px;
             margin: 2px 0;
+            transition: all 0.3s;
         }
+        
         .sidebar .nav-link:hover, .sidebar .nav-link.active {
-            background-color: #0d6efd;
+            background-color: var(--link-color);
             color: white;
         }
+        
         .sidebar .nav-link i {
             margin-right: 10px;
         }
+        
         .main-content {
             padding: 20px;
+        }
+        
+        .card {
+            background-color: var(--card-bg);
+            border-color: var(--border-color);
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+        
+        .table {
+            color: var(--text-color);
+        }
+        
+        .form-control, .form-select {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            border-color: var(--border-color);
+        }
+        
+        .form-control:focus, .form-select:focus {
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            border-color: var(--link-color);
+            box-shadow: 0 0 0 0.25rem rgba(13, 110, 253, 0.25);
+        }
+        
+        .dropdown-menu {
+            background-color: var(--card-bg);
+            border-color: var(--border-color);
+        }
+        
+        .dropdown-item {
+            color: var(--text-color);
+        }
+        
+        .dropdown-item:hover {
+            background-color: var(--bs-gray-700);
+            color: var(--bs-white);
         }
     </style>
     {% block extra_css %}{% endblock %}
@@ -47,9 +116,17 @@
                             <i class="bi bi-person-circle"></i> {{ session.get('username', 'Usuario') }}
                         </a>
                         <ul class="dropdown-menu dropdown-menu-end">
-                            <li><a class="dropdown-item" href="#"><i class="bi bi-person"></i> Perfil</a></li>
+                            <li><a class="dropdown-item" href="{{ url_for('auth.profile') }}"><i class="bi bi-person"></i> Perfil</a></li>
                             <li><hr class="dropdown-divider"></li>
                             <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}"><i class="bi bi-box-arrow-right"></i> Cerrar sesión</a></li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li class="d-flex align-items-center px-3 py-1">
+                            <i class="bi bi-moon-stars me-2"></i>
+                            <div class="form-check form-switch mb-0">
+                                <input class="form-check-input" type="checkbox" id="themeToggle">
+                                <label class="form-check-label" for="themeToggle">Modo Oscuro</label>
+                            </div>
+                        </li>
                         </ul>
                     </li>
                     {% else %}
@@ -68,37 +145,37 @@
             <div class="col-md-3 col-lg-2 d-md-block sidebar collapse">
                 <div class="position-sticky pt-3">
                     <ul class="nav flex-column">
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.dashboard') }}">
-                                <i class="bi bi-speedometer2"></i> Dashboard
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'main.books' %}active{% endif %}" href="{{ url_for('main.books') }}">
-                                <i class="bi bi-book"></i> Libros
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link {% if request.endpoint == 'main.loans' %}active{% endif %}" href="{{ url_for('main.loans') }}">
-                                <i class="bi bi-arrow-left-right"></i> Préstamos
-                            </a>
-                        </li>
-                        {% if session.get('is_admin', False) %}
-                        <li class="nav-item mt-3">
-                            <h6 class="px-3 text-muted">Administración</h6>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="#">
-                                <i class="bi bi-people"></i> Usuarios
-                            </a>
-                        </li>
-                        <li class="nav-item">
-                            <a class="nav-link" href="#">
-                                <i class="bi bi-tags"></i> Géneros
-                            </a>
-                        </li>
-                        {% endif %}
-                    </ul>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.dashboard') }}">
+                            <i class="bi bi-speedometer2"></i> Dashboard
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'main.books' %}active{% endif %}" href="{{ url_for('main.books') }}">
+                            <i class="bi bi-book"></i> Libros
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'main.loans' %}active{% endif %}" href="{{ url_for('main.loans') }}">
+                            <i class="bi bi-arrow-left-right"></i> Préstamos
+                        </a>
+                    </li>
+                    {% if session.get('is_admin', False) %}
+                    <li class="nav-item mt-3">
+                        <h6 class="px-3 text-muted">Administración</h6>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'auth.manage_users' %}active{% endif %}" href="{{ url_for('auth.manage_users') }}">
+                            <i class="bi bi-people"></i> Usuarios
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'auth.manage_genres' %}active{% endif %}" href="{{ url_for('auth.manage_genres') }}">
+                            <i class="bi bi-tags"></i> Géneros
+                        </a>
+                    </li>
+                    {% endif %}
+                </ul>
                 </div>
             </div>
             {% endif %}
@@ -121,6 +198,36 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    // Dark/Light mode toggle
+    document.addEventListener('DOMContentLoaded', function() {
+        const themeToggle = document.getElementById('themeToggle');
+        const prefersDarkScheme = window.matchMedia('(prefers-color-scheme: dark)');
+        const currentTheme = localStorage.getItem('theme');
+        
+        // Set initial theme
+        if (currentTheme === 'dark' || (!currentTheme && prefersDarkScheme.matches)) {
+            document.documentElement.setAttribute('data-bs-theme', 'dark');
+            if (themeToggle) themeToggle.checked = true;
+        } else {
+            document.documentElement.setAttribute('data-bs-theme', 'light');
+            if (themeToggle) themeToggle.checked = false;
+        }
+        
+        // Toggle theme when switch is clicked
+        if (themeToggle) {
+            themeToggle.addEventListener('change', function() {
+                if (this.checked) {
+                    document.documentElement.setAttribute('data-bs-theme', 'dark');
+                    localStorage.setItem('theme', 'dark');
+                } else {
+                    document.documentElement.setAttribute('data-bs-theme', 'light');
+                    localStorage.setItem('theme', 'light');
+                }
+            });
+        }
+    });
+    </script>
     {% block extra_js %}{% endblock %}
 </body>
 </html>

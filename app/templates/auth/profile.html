@@ -1,0 +1,103 @@
+{% extends "layout.html" %}
+
+{% block title %}Mi Perfil - Sistema de Biblioteca{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="card shadow-sm">
+            <div class="card-header bg-primary text-white">
+                <h4 class="mb-0">Mi Perfil</h4>
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('auth.update_profile') }}">
+                    <div class="mb-3">
+                        <label for="username" class="form-label">Nombre de Usuario</label>
+                        <input type="text" class="form-control" id="username" value="{{ user.username }}" disabled>
+                        <div class="form-text">El nombre de usuario no puede ser modificado.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="fullName" class="form-label">Nombre Completo</label>
+                        <input type="text" class="form-control" id="fullName" name="full_name" value="{{ user.full_name or '' }}">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="email" class="form-label">Correo Electrónico</label>
+                        <input type="email" class="form-control" id="email" name="email" value="{{ user.email }}" required>
+                    </div>
+                    
+                    <hr>
+                    <h5>Cambiar Contraseña</h5>
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> Deja estos campos en blanco si no deseas cambiar tu contraseña.
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="currentPassword" class="form-label">Contraseña Actual</label>
+                        <input type="password" class="form-control" id="currentPassword" name="current_password">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="newPassword" class="form-label">Nueva Contraseña</label>
+                        <input type="password" class="form-control" id="newPassword" name="new_password">
+                        <div class="form-text">La contraseña debe tener al menos 8 caracteres.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="confirmPassword" class="form-label">Confirmar Nueva Contraseña</label>
+                        <input type="password" class="form-control" id="confirmPassword" name="confirm_password">
+                    </div>
+                    
+                    <div class="d-grid gap-2 d-md-flex justify-content-md-end">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save"></i> Guardar Cambios
+                        </button>
+                    </div>
+                </form>
+            </div>
+            <div class="card-footer text-muted">
+                <small>Usuario desde: {{ user.created_at.strftime('%d/%m/%Y') if user.created_at else 'Fecha no disponible' }}</small>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.querySelector('form');
+    
+    form.addEventListener('submit', function(e) {
+        const newPassword = document.getElementById('newPassword').value;
+        const confirmPassword = document.getElementById('confirmPassword').value;
+        const currentPassword = document.getElementById('currentPassword').value;
+        
+        // Si se está intentando cambiar la contraseña
+        if (newPassword || confirmPassword || currentPassword) {
+            // Verificar que los campos de contraseña coincidan
+            if (newPassword !== confirmPassword) {
+                e.preventDefault();
+                alert('Las contraseñas nuevas no coinciden');
+                return false;
+            }
+            
+            // Verificar que la nueva contraseña tenga al menos 8 caracteres
+            if (newPassword.length > 0 && newPassword.length < 8) {
+                e.preventDefault();
+                alert('La nueva contraseña debe tener al menos 8 caracteres');
+                return false;
+            }
+            
+            // Verificar que se ingresó la contraseña actual
+            if (!currentPassword) {
+                e.preventDefault();
+                alert('Debes ingresar tu contraseña actual para realizar cambios');
+                return false;
+            }
+        }
+    });
+});
+</script>
+{% endblock %}
