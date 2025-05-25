@@ -140,71 +140,65 @@ def books():
         cur.execute("SELECT * FROM genres ORDER BY name")
         genres = cur.fetchall()
         
-        # Construir la consulta base
+        # Consulta base para traer SIEMPRE el número actualizado de copias
         base_query = """
             FROM books b
             LEFT JOIN genres g ON b.genre_id = g.id
             WHERE 1=1
         """
-        
-        # Construir la consulta de conteo
         count_query = "SELECT COUNT(*) as total " + base_query
-        
-        # Construir la consulta de datos
         data_query = """
-            SELECT b.*, g.name as genre_name, 
+            SELECT b.*, g.name as genre_name,
                    (SELECT COUNT(*) FROM loans WHERE book_id = b.id AND return_date IS NULL) as active_loans
             """ + base_query
-        
-        # Añadir filtros
         params = []
-        
         if search:
             search_condition = " AND (b.title LIKE %s OR b.author LIKE %s OR b.isbn = %s)"
             search_term = f"%{search}%"
             params.extend([search_term, search_term, search])
             count_query += search_condition
             data_query += search_condition
-            
         if genre and genre.isdigit():
             genre_condition = " AND b.genre_id = %s"
             params.append(genre)
             count_query += genre_condition
             data_query += genre_condition
-        
         # Obtener el total de registros
         cur.execute(count_query, tuple(params))
         total = cur.fetchone()['total']
-        
-        # Crear objeto de paginación vacío si no hay resultados
         if total == 0:
             pagination = Pagination([], page, per_page, 0)
         else:
-            # Añadir orden y paginación
             data_query += " ORDER BY b.title"
             data_query += " LIMIT %s OFFSET %s"
             params.extend([per_page, (page - 1) * per_page])
-            
-            # Ejecutar consulta de datos
             cur.execute(data_query, tuple(params))
             books = cur.fetchall()
-            
-            # Crear objeto de paginación
             pagination = Pagination(books, page, per_page, total)
-        
-        return render_template('books.html', 
-                             books=pagination, 
-                             genres=genres,
-                             search=search,
-                             selected_genre=genre)
+        # Obtener usuario actual
+        cur.execute('SELECT id, username, full_name, email FROM users WHERE id = %s', (session['user_id'],))
+        user = cur.fetchone()
+        return render_template('books.html',
+                              books=pagination,
+                              genres=genres,
+                              search=search,
+                              selected_genre=genre,
+                              user=user,
+                              current_user=user)
     except Exception as e:
         logger.error(f"Error en la ruta de libros: {str(e)}", exc_info=True)
         flash('Error al cargar los libros. Por favor, intente nuevamente.', 'error')
-        return render_template('books.html', 
-                           books=Pagination([], 1, 10, 0),
-                           genres=[],
-                           search=search,
-                           selected_genre=genre)
+        user = None
+        if 'user_id' in session:
+            cur.execute('SELECT id, username, full_name, email FROM users WHERE id = %s', (session['user_id'],))
+            user = cur.fetchone()
+        return render_template('books.html',
+                               books=Pagination([], 1, 10, 0),
+                               genres=[],
+                               search=search,
+                               selected_genre=genre,
+                               user=user,
+                               current_user=user)
     finally:
         if 'cur' in locals():
             cur.close()
@@ -213,75 +207,107 @@ def books():
 
 # Ruta para mostrar los préstamos
 @bp.route('/loans')
+@login_required
 def loans():
-    if 'user_id' not in session:
-        return redirect(url_for('auth.login'))
-    
-    tab = request.args.get('tab', 'active')
+    # Obtener parámetros de filtrado
+    search = request.args.get('search', '').strip()
+    status_filter = request.args.get('status', '')
     
     conn = get_db_connection()
     cur = get_cursor()
     
     try:
-        # Obtener préstamos activos
+        is_admin = session.get('is_admin', False)
+        user_id = session.get('user_id')
         active_loans = []
         overdue_loans = []
         returned_loans = []
-        
-        if tab in ['active', 'all']:
-            cur.execute("""
-                SELECT l.*, b.title as book_title, u.username as user_name 
-                FROM loans l
-                JOIN books b ON l.book_id = b.id
-                JOIN users u ON l.user_id = u.id
-                WHERE l.return_date IS NULL
-                ORDER BY l.due_date
+        search_conditions = []
+        params = []
+        if search:
+            search_conditions.append("""
+                (b.title LIKE %s OR 
+                b.author LIKE %s OR 
+                u.username LIKE %s OR 
+                u.full_name LIKE %s)
             """)
-            active_loans = cur.fetchall()
-            
-            # Identificar préstamos vencidos
-            today = datetime.now().date()
-            for loan in active_loans:
-                if loan['due_date'] < today:
-                    overdue_loans.append(loan)
-            
-            # Remover préstamos vencidos de la lista de activos
-            active_loans = [loan for loan in active_loans if loan['due_date'] >= today]
-        
-        if tab in ['overdue', 'all'] and tab != 'active':
-            cur.execute("""
-                SELECT l.*, b.title as book_title, u.username as user_name 
-                FROM loans l
-                JOIN books b ON l.book_id = b.id
-                JOIN users u ON l.user_id = u.id
-                WHERE l.return_date IS NULL AND l.due_date < CURDATE()
-                ORDER BY l.due_date
-            """)
-            overdue_loans = cur.fetchall()
-        
-        if tab in ['returned', 'all']:
-            cur.execute("""
-                SELECT l.*, b.title as book_title, u.username as user_name 
-                FROM loans l
-                JOIN books b ON l.book_id = b.id
-                JOIN users u ON l.user_id = u.id
-                WHERE l.return_date IS NOT NULL
-                ORDER BY l.return_date DESC
-                LIMIT 50
-            """)
-            returned_loans = cur.fetchall()
-        
-        return render_template('loans.html',
-                             active_loans=active_loans,
-                             overdue_loans=overdue_loans,
-                             returned_loans=returned_loans,
-                             active_tab=tab)
+            search_term = f"%{search}%"
+            params.extend([search_term, search_term, search_term, search_term])
+        # Si no es admin, solo mostrar los préstamos del usuario actual
+        if not is_admin:
+            search_conditions.append("l.user_id = %s")
+            params.append(user_id)
+        base_query = """
+            SELECT l.*, b.title as book_title, b.available_copies,
+                   u.username as user_name, u.full_name as user_full_name,
+                   DATEDIFF(l.due_date, CURDATE()) as days_remaining,
+                   l.due_date < CURDATE() as is_overdue,
+                   b.author as book_author, b.isbn
+            FROM loans l
+            JOIN books b ON l.book_id = b.id
+            JOIN users u ON l.user_id = u.id
+            WHERE 1=1
+        """
+        if search_conditions:
+            base_query += " AND " + " AND ".join(search_conditions)
+        # Consulta para préstamos activos y vencidos
+        active_query = base_query + " AND l.return_date IS NULL ORDER BY l.due_date ASC"
+        cur.execute(active_query, params)
+        all_loans = cur.fetchall()
+        for loan in all_loans:
+            if loan['is_overdue']:
+                overdue_loans.append(loan)
+            else:
+                active_loans.append(loan)
+        # Consulta para préstamos devueltos
+        returned_query = base_query + " AND l.return_date IS NOT NULL ORDER BY l.return_date DESC"
+        cur.execute(returned_query, params)
+        returned_loans = cur.fetchall()
+        # Aplicar filtro de estado si está presente
+        if status_filter == 'active':
+            returned_loans = []
+            overdue_loans = []
+        elif status_filter == 'overdue':
+            active_loans = []
+            returned_loans = []
+        elif status_filter == 'returned':
+            active_loans = []
+            overdue_loans = []
+        return render_template(
+            'loans.html',
+            active_loans=active_loans,
+            overdue_loans=overdue_loans,
+            returned_loans=returned_loans,
+            search=search,
+            status_filter=status_filter,
+            is_admin=is_admin
+        )
     except Exception as e:
-        flash(f'Error al cargar los préstamos: {str(e)}', 'error')
-        return render_template('loans.html', 
-                             active_loans=[], 
-                             overdue_loans=[], 
-                             returned_loans=[])
+        import traceback
+        error_details = traceback.format_exc()
+        current_app.logger.error(f'Error al obtener préstamos: {str(e)}\n{error_details}')
+        
+        # Log the query that was being executed
+        current_app.logger.error(f'Query: {active_query if "active_query" in locals() else "No query generated"}')
+        current_app.logger.error(f'Params: {params if "params" in locals() else "No params"}')
+        
+        # If in development, show more details
+        if current_app.config.get('ENV') == 'development':
+            flash(f'Error al cargar los préstamos: {str(e)}', 'error')
+        else:
+            flash('Ocurrió un error al cargar los préstamos. Por favor, intente nuevamente.', 'error')
+            
+        # Return empty results instead of redirecting to show the error message
+        return render_template(
+            'loans.html',
+            active_loans=[],
+            overdue_loans=[],
+            returned_loans=[],
+            search=search if 'search' in locals() else '',
+            status_filter=status_filter if 'status_filter' in locals() else '',
+            is_admin=is_admin if 'is_admin' in locals() else False,
+            error=str(e)
+        )
     finally:
         if 'cur' in locals():
             cur.close()
@@ -290,16 +316,33 @@ def loans():
 
 # Ruta para registrar un nuevo préstamo
 @bp.route('/loans/new', methods=['POST'])
+@login_required
 def new_loan():
-    if 'user_id' not in session or not session.get('is_admin', False):
-        flash('No tienes permiso para realizar esta acción', 'error')
-        return redirect(url_for('main.loans'))
+    if 'user_id' not in session:
+        flash('Debes iniciar sesión para realizar esta acción', 'error')
+        return redirect(url_for('auth.login'))
     
     book_id = request.form.get('book_id')
-    user_id = request.form.get('user_id')
     due_date = request.form.get('due_date')
     
-    if not all([book_id, user_id, due_date]):
+    # Si es admin, puede especificar el usuario, si no, usa el usuario actual
+    is_admin = session.get('is_admin', False)
+    # Solo los administradores pueden asignar el user_id desde el formulario
+    if is_admin:
+        user_id = request.form.get('user_id')
+        if not user_id:
+            flash('Debes seleccionar un usuario para el préstamo', 'error')
+            return redirect(url_for('main.loans'))
+    else:
+        # Forzamos el user_id al de la sesión para usuarios normales
+        user_id = str(session['user_id'])
+    
+    # Seguridad extra: si por alguna razón el user_id no es válido
+    if not user_id:
+        flash('No se pudo identificar el usuario para el préstamo', 'error')
+        return redirect(url_for('main.loans'))
+    
+    if not all([book_id, due_date]):
         flash('Todos los campos son obligatorios', 'error')
         return redirect(url_for('main.loans'))
     
@@ -307,32 +350,60 @@ def new_loan():
     cur = get_cursor()
     
     try:
-        # Verificar si el libro está disponible
-        cur.execute("SELECT available_copies FROM books WHERE id = %s", (book_id,))
+        # Validar existencia y disponibilidad de copias del libro
+        cur.execute("SELECT id, available_copies, title FROM books WHERE id = %s FOR UPDATE", (book_id,))
         book = cur.fetchone()
-        
-        if not book or book['available_copies'] <= 0:
-            flash('El libro no está disponible para préstamo', 'error')
-            return redirect(url_for('main.loans'))
-        
-        # Crear el préstamo
+        if not book:
+            flash('El libro seleccionado no existe.', 'error')
+            return redirect(url_for('main.books'))
+        if book['available_copies'] <= 0:
+            flash('No hay ejemplares disponibles para este libro.', 'error')
+            return redirect(url_for('main.books'))
+
+        # Verificar si el usuario ya tiene un préstamo activo de este libro
+        cur.execute("""
+            SELECT id FROM loans 
+            WHERE user_id = %s AND book_id = %s AND return_date IS NULL
+            LIMIT 1
+        """, (user_id, book_id))
+        if cur.fetchone():
+            flash('Ya tienes un préstamo activo de este libro', 'error')
+            return redirect(url_for('main.books'))
+
+        # Registrar el préstamo
         cur.execute("""
             INSERT INTO loans (user_id, book_id, loan_date, due_date)
             VALUES (%s, %s, CURDATE(), %s)
         """, (user_id, book_id, due_date))
-        
-        # Actualizar el contador de copias disponibles
+
+        # Descontar una copia disponible
         cur.execute("""
             UPDATE books 
             SET available_copies = available_copies - 1 
-            WHERE id = %s
+            WHERE id = %s AND available_copies > 0
         """, (book_id,))
-        
+
+        # Registrar movimiento en book_movements (préstamo)
+        cur.execute("""
+            INSERT INTO book_movements (book_id, user_id, movement_type, quantity, description, created_at)
+            VALUES (%s, %s, %s, %s, %s, NOW())
+        """, (book_id, user_id, 'prestamo', 1, 'Préstamo registrado desde el sistema'))
+
+        # Registrar la acción en el log
+        current_app.logger.info(
+            f"Nuevo préstamo - Libro ID: {book_id}, Usuario ID: {user_id}, "
+            f"Título: {book['title']}, Fecha de vencimiento: {due_date}"
+        )
+
         conn.commit()
         flash('Préstamo registrado exitosamente', 'success')
+
     except Exception as e:
         conn.rollback()
-        flash(f'Error al registrar el préstamo: {str(e)}', 'error')
+        current_app.logger.error(f'Error al registrar préstamo: {str(e)}')
+        flash('Ocurrió un error al registrar el préstamo. Por favor, intente nuevamente.', 'error')
+        return redirect(url_for('main.books'))
+
     finally:
         if 'cur' in locals():
             cur.close()
@@ -341,12 +412,66 @@ def new_loan():
     
     return redirect(url_for('main.loans'))
 
+# Ruta para renovar un préstamo
+@bp.route('/loans/renew/<int:loan_id>', methods=['POST'])
+@login_required
+def renew_loan(loan_id):
+    if not session.get('is_admin', False):
+        return jsonify({'success': False, 'message': 'No tienes permiso para realizar esta acción'}), 403
+    
+    conn = get_db_connection()
+    cur = get_cursor()
+    
+    try:
+        # Verificar si el préstamo existe y está activo
+        cur.execute("""
+            SELECT l.*, b.available_copies 
+            FROM loans l
+            JOIN books b ON l.book_id = b.id
+            WHERE l.id = %s AND l.return_date IS NULL
+        """, (loan_id,))
+        
+        loan = cur.fetchone()
+        
+        if not loan:
+            return jsonify({'success': False, 'message': 'Préstamo no encontrado o ya fue devuelto'}), 404
+        
+        # Calcular la nueva fecha de vencimiento (15 días a partir de hoy)
+        new_due_date = datetime.now().date() + timedelta(days=15)
+        
+        # Actualizar la fecha de vencimiento del préstamo
+        cur.execute("""
+            UPDATE loans 
+            SET due_date = %s, 
+                renewal_count = COALESCE(renewal_count, 0) + 1,
+                last_renewal_date = CURDATE()
+            WHERE id = %s
+        """, (new_due_date, loan_id))
+        
+        conn.commit()
+        return jsonify({
+            'success': True,
+            'message': 'Préstamo renovado exitosamente',
+            'new_due_date': new_due_date.strftime('%d/%m/%Y')
+        })
+        
+    except Exception as e:
+        conn.rollback()
+        current_app.logger.error(f'Error al renovar préstamo: {str(e)}')
+        return jsonify({'success': False, 'message': 'Error al renovar el préstamo'}), 500
+        
+    finally:
+        if 'cur' in locals():
+            cur.close()
+        if 'conn' in locals():
+            conn.close()
+
 # Ruta para registrar la devolución de un libro
 @bp.route('/loans/return/<int:loan_id>', methods=['POST'])
+@login_required
 def return_loan(loan_id):
-    if 'user_id' not in session or not session.get('is_admin', False):
-        flash('No tienes permiso para realizar esta acción', 'error')
-        return redirect(url_for('main.loans'))
+    if not session.get('is_admin', False):
+        return jsonify({'success': False, 'message': 'No tienes permiso para realizar esta acción'}), 403
     
     conn = get_db_connection()
     cur = get_cursor()
@@ -363,8 +488,7 @@ def return_loan(loan_id):
         loan = cur.fetchone()
         
         if not loan:
-            flash('Préstamo no encontrado o ya fue devuelto', 'error')
-            return redirect(url_for('main.loans'))
+            return jsonify({'success': False, 'message': 'Préstamo no encontrado o ya fue devuelto'}), 404
         
         # Registrar la devolución
         cur.execute("""
@@ -379,19 +503,42 @@ def return_loan(loan_id):
             SET available_copies = available_copies + 1 
             WHERE id = %s
         """, (loan['book_id'],))
-        
+
+        # Registrar movimiento en book_movements (devolución)
+        cur.execute("""
+            INSERT INTO book_movements (book_id, user_id, movement_type, quantity, description, created_at)
+            VALUES (%s, %s, %s, %s, %s, NOW())
+        """, (loan['book_id'], loan['user_id'], 'devolucion', 1, 'Devolución registrada desde el sistema'))
+
+        # Registrar el historial de devolución
+        cur.execute("""
+            INSERT INTO loan_history (
+                loan_id, user_id, book_id, action_type, action_date, notes
+            )
+            SELECT 
+                id, user_id, book_id, 'return', NOW(), 
+                CONCAT('Devolución registrada. Fecha de préstamo: ', loan_date, ', Fecha de vencimiento: ', due_date)
+            FROM loans 
+            WHERE id = %s
+        """, (loan_id,))
+
         conn.commit()
-        flash('Devolución registrada exitosamente', 'success')
+        return jsonify({
+            'success': True,
+            'message': 'Devolución registrada exitosamente',
+            'return_date': datetime.now().strftime('%d/%m/%Y %H:%M:%S')
+        })
+        
     except Exception as e:
         conn.rollback()
-        flash(f'Error al registrar la devolución: {str(e)}', 'error')
+        current_app.logger.error(f'Error al registrar devolución: {str(e)}')
+        return jsonify({'success': False, 'message': 'Error al registrar la devolución'}), 500
+        
     finally:
         if 'cur' in locals():
             cur.close()
         if 'conn' in locals():
             conn.close()
-    
-    return redirect(url_for('main.loans'))
 
 # Ruta para buscar usuarios (usada en autocompletado)
 @bp.route('/api/search_users')
@@ -424,6 +571,35 @@ def search_users():
         return jsonify(users)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    finally:
+        if 'cur' in locals():
+            cur.close()
+        if 'conn' in locals():
+            conn.close()
+
+# Ruta para obtener el historial de movimientos de un libro
+@bp.route('/api/books/<int:book_id>/movements', methods=['GET'])
+@login_required
+def get_book_movements(book_id):
+    conn = get_db_connection()
+    cur = get_cursor()
+    try:
+        cur.execute('''
+            SELECT bm.id, bm.book_id, bm.user_id, u.username, bm.movement_type, bm.quantity, bm.created_at, bm.description
+            FROM book_movements bm
+            JOIN users u ON bm.user_id = u.id
+            WHERE bm.book_id = %s
+            ORDER BY bm.created_at DESC
+        ''', (book_id,))
+        movements = cur.fetchall()
+        # Serializar created_at a string legible
+        for mv in movements:
+            if isinstance(mv['created_at'], datetime):
+                mv['created_at'] = mv['created_at'].strftime('%Y-%m-%d %H:%M:%S')
+        return jsonify({'success': True, 'movements': movements})
+    except Exception as e:
+        current_app.logger.error(f'Error al obtener historial de movimientos: {str(e)}')
+        return jsonify({'success': False, 'message': 'Error al obtener historial de movimientos'}), 500
     finally:
         if 'cur' in locals():
             cur.close()

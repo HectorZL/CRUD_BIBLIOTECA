@@ -3,6 +3,176 @@
 {% block title %}Préstamos - Sistema de Biblioteca{% endblock %}
 
 {% block content %}
+<div class="container-fluid">
+    {% if error %}
+    <div class="alert alert-danger alert-dismissible fade show mt-3" role="alert">
+        <h4 class="alert-heading">Error al cargar los préstamos</h4>
+        <p>{{ error }}</p>
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        {% if config.ENV == 'development' %}
+        <hr>
+        <p class="mb-0 small text-muted">
+            <strong>Detalles técnicos:</strong><br>
+            {{ error }}
+        </p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="h3 mb-0">Gestión de Préstamos</h1>
+        <div>
+            <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newLoanModal">
+                <i class="fas fa-plus me-2"></i>Nuevo Préstamo
+            </button>
+        </div>
+    </div>
+
+<script>
+// Función para mostrar alertas
+function showAlert(type, title, message) {
+    const alertHtml = `
+        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            <strong>${title}</strong> ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>`;
+    
+    // Insertar la alerta al principio del contenido principal
+    const mainContent = document.querySelector('main');
+    if (mainContent) {
+        mainContent.insertAdjacentHTML('afterbegin', alertHtml);
+    }
+    
+    // Eliminar la alerta después de 5 segundos
+    setTimeout(() => {
+        const alert = document.querySelector('.alert');
+        if (alert) {
+            alert.remove();
+        }
+    }, 5000);
+}
+
+// Función para manejar la devolución de un libro
+function returnBook(loanId, bookTitle) {
+    if (confirm('¿Estás seguro de que deseas marcar como devuelto el libro "' + bookTitle + '"?')) {
+        fetch(`/loans/return/${loanId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            },
+            body: JSON.stringify({})
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => { throw new Error(err.message || 'Error al procesar la solicitud'); });
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                showAlert('success', '¡Éxito!', 'El libro ha sido marcado como devuelto correctamente.');
+                // Recargar la página después de 1.5 segundos
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+            } else {
+                throw new Error(data.message || 'Error al procesar la solicitud');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlert('danger', 'Error', error.message || 'Ocurrió un error al procesar la solicitud');
+        });
+    }
+}
+
+// Función para manejar la renovación de un préstamo
+function renewLoan(loanId, bookTitle) {
+    if (confirm('¿Deseas renovar el préstamo del libro "' + bookTitle + '" por 15 días más?')) {
+        fetch(`/loans/renew/${loanId}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+            },
+            body: JSON.stringify({})
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => { throw new Error(err.message || 'Error al procesar la solicitud'); });
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                showAlert('success', '¡Éxito!', 'El préstamo ha sido renovado correctamente.');
+                // Recargar la página después de 1.5 segundos
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+            } else {
+                throw new Error(data.message || 'Error al procesar la solicitud');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlert('danger', 'Error', error.message || 'Ocurrió un error al procesar la solicitud');
+        });
+    }
+}
+
+// Inicialización de eventos cuando el DOM esté listo
+document.addEventListener('DOMContentLoaded', function() {
+    // Inicializar tooltips
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+
+    // Inicializar popovers
+    var popoverTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="popover"]'));
+    var popoverList = popoverTriggerList.map(function (popoverTriggerEl) {
+        return new bootstrap.Popover(popoverTriggerEl);
+    });
+
+    // Manejador de eventos para los botones de devolución
+    document.addEventListener('click', function(e) {
+        // Manejar clic en botón de devolver
+        if (e.target.closest('.btn-return')) {
+            const button = e.target.closest('.btn-return');
+            const loanId = button.dataset.loanId;
+            const bookTitle = button.dataset.bookTitle;
+            returnBook(loanId, bookTitle);
+        }
+        
+        // Manejar clic en botón de renovar
+        if (e.target.closest('.btn-renew')) {
+            const button = e.target.closest('.btn-renew');
+            const loanId = button.dataset.loanId;
+            const bookTitle = button.dataset.bookTitle;
+            renewLoan(loanId, bookTitle);
+        }
+    });
+
+    // Manejar el envío del formulario de búsqueda
+    const searchForm = document.getElementById('searchForm');
+    if (searchForm) {
+        searchForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const searchInput = this.querySelector('input[name="search"]');
+            if (searchInput && searchInput.value.trim() === '') {
+                window.location.href = '{{ url_for("main.loans") }}';
+            } else {
+                this.submit();
+            }
+        });
+    }
+});
+</script>
+
 <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
     <h1 class="h2">Gestión de Préstamos</h1>
     <div class="btn-toolbar mb-2 mb-md-0">
@@ -18,60 +188,69 @@
 <div class="card mb-4">
     <div class="card-body">
         <form class="row g-3">
+            <input type="hidden" name="tab" value="{{ active_tab }}">
             <div class="col-md-4">
                 <label for="search" class="form-label">Buscar</label>
-                <input type="text" class="form-control" id="search" name="search" placeholder="Libro, usuario o ID...">
+                <input type="text" class="form-control" id="search" name="search" 
+                       value="{{ search }}" placeholder="Libro, usuario o ID...">
             </div>
             <div class="col-md-3">
                 <label for="status" class="form-label">Estado</label>
                 <select class="form-select" id="status" name="status">
-                    <option value="" {% if not request.args.get('status') %}selected{% endif %}>Todos</option>
-                    <option value="active" {% if request.args.get('status') == 'active' %}selected{% endif %}>Activos</option>
-                    <option value="overdue" {% if request.args.get('status') == 'overdue' %}selected{% endif %}>Vencidos</option>
-                    <option value="returned" {% if request.args.get('status') == 'returned' %}selected{% endif %}>Devueltos</option>
+                    <option value="">Todos</option>
+                    <option value="active" {% if status == 'active' %}selected{% endif %}>Activos</option>
+                    <option value="overdue" {% if status == 'overdue' %}selected{% endif %}>Vencidos</option>
                 </select>
             </div>
             <div class="col-md-3">
                 <label for="date_range" class="form-label">Rango de Fechas</label>
                 <select class="form-select" id="date_range" name="date_range">
                     <option value="">Todos los tiempos</option>
-                    <option value="today">Hoy</option>
-                    <option value="week">Esta semana</option>
-                    <option value="month">Este mes</option>
-                    <option value="custom">Personalizado</option>
+                    <option value="today" {% if date_range == 'today' %}selected{% endif %}>Hoy</option>
+                    <option value="week" {% if date_range == 'week' %}selected{% endif %}>Esta semana</option>
+                    <option value="month" {% if date_range == 'month' %}selected{% endif %}>Este mes</option>
                 </select>
             </div>
             <div class="col-md-2 d-flex align-items-end">
                 <button type="submit" class="btn btn-primary w-100">
                     <i class="bi bi-search"></i> Buscar
                 </button>
+                {% if search or status or date_range %}
+                <a href="{{ url_for('main.loans', tab=active_tab) }}" class="btn btn-outline-secondary ms-2">
+                    <i class="bi bi-x-lg"></i>
+                </a>
+                {% endif %}
             </div>
         </form>
     </div>
 </div>
 
 <!-- Pestañas de navegación -->
+<!-- Pestañas de navegación (solo una barra, sin duplicados) -->
 <ul class="nav nav-tabs mb-4" id="loansTabs" role="tablist">
     <li class="nav-item" role="presentation">
-        <button class="nav-link active" id="active-tab" data-bs-toggle="tab" data-bs-target="#active" type="button" role="tab">
-            Activos <span class="badge bg-primary ms-1">{{ active_loans_count }}</span>
-        </button>
+        <a class="nav-link {% if not request.args.get('status') or request.args.get('status') == 'active' %}active{% endif %}"
+           id="active-tab" data-bs-toggle="tab" href="#active" role="tab">Activos
+            {% if active_loans %}<span class="badge bg-primary ms-1">{{ active_loans|length }}</span>{% endif %}
+        </a>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="overdue-tab" data-bs-toggle="tab" data-bs-target="#overdue" type="button" role="tab">
-            Vencidos <span class="badge bg-danger ms-1">{{ overdue_loans_count }}</span>
-        </button>
+        <a class="nav-link {% if request.args.get('status') == 'overdue' %}active{% endif %}"
+           id="overdue-tab" data-bs-toggle="tab" href="#overdue" role="tab">Vencidos
+            {% if overdue_loans %}<span class="badge bg-danger ms-1">{{ overdue_loans|length }}</span>{% endif %}
+        </a>
     </li>
     <li class="nav-item" role="presentation">
-        <button class="nav-link" id="returned-tab" data-bs-toggle="tab" data-bs-target="#returned" type="button" role="tab">
-            Historial
-        </button>
+        <a class="nav-link {% if request.args.get('status') == 'returned' %}active{% endif %}"
+           id="returned-tab" data-bs-toggle="tab" href="#returned" role="tab">Devueltos
+            {% if returned_loans %}<span class="badge bg-success ms-1">{{ returned_loans|length }}</span>{% endif %}
+        </a>
     </li>
 </ul>
 
 <div class="tab-content" id="loansTabsContent">
-    <!-- Pestaña de Préstamos Activos -->
-    <div class="tab-pane fade show active" id="active" role="tabpanel" aria-labelledby="active-tab">
+    <div class="tab-pane fade {% if not request.args.get('status') or request.args.get('status') == 'active' %}show active{% endif %}"
+         id="active" role="tabpanel" aria-labelledby="active-tab">
         {% if active_loans %}
         <div class="table-responsive">
             <table class="table table-hover align-middle">
@@ -81,13 +260,146 @@
                         <th>Usuario</th>
                         <th>Fecha de Préstamo</th>
                         <th>Fecha de Devolución</th>
-                        <th>Días Restantes</th>
+                        <th>Estado</th>
                         <th class="text-end">Acciones</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for loan in active_loans %}
-                    <tr class="{% if loan.is_overdue %}table-danger{% endif %}">
+                    <tr>
+                        <td>{{ loan.book_title or 'N/A' }}</td>
+                        <td>{{ loan.user_full_name or loan.user_name or 'N/A' }}</td>
+                        <td>{{ loan.loan_date.strftime('%d/%m/%Y') if loan.loan_date else 'N/A' }}</td>
+                        <td>{{ loan.due_date.strftime('%d/%m/%Y') if loan.due_date else 'N/A' }}</td>
+                        <td><span class="badge bg-success">Activo</span></td>
+                        <td class="text-end">
+                            <button type="button" class="btn btn-sm btn-outline-primary"
+                                data-bs-toggle="modal" data-bs-target="#viewLoanModal{{ loan.id }}">
+                                <i class="bi bi-eye"></i> Ver detalles
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-success btn-return ms-1"
+                                data-loan-id="{{ loan.id }}" data-book-title="{{ loan.book_title|e }}"
+                                data-bs-toggle="tooltip" data-bs-placement="top" title="Marcar como devuelto">
+                                <i class="bi bi-check-circle"></i> Devolver
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-check-circle display-1 text-success"></i>
+            <h3 class="mt-3">No hay préstamos activos</h3>
+            <p class="text-muted">Todos los libros están en la biblioteca.</p>
+        </div>
+        {% endif %}
+    </div>
+    <div class="tab-pane fade {% if request.args.get('status') == 'overdue' %}show active{% endif %}"
+         id="overdue" role="tabpanel" aria-labelledby="overdue-tab">
+        {% if overdue_loans %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Libro</th>
+                        <th>Usuario</th>
+                        <th>Fecha de Préstamo</th>
+                        <th>Fecha de Devolución</th>
+                        <th>Días de Retraso</th>
+                        <th class="text-end">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for loan in overdue_loans %}
+                    <tr class="table-danger">
+                        <td>{{ loan.book_title or 'N/A' }}</td>
+                        <td>{{ loan.user_name or 'N/A' }}</td>
+                        <td>{{ loan.loan_date.strftime('%d/%m/%Y') if loan.loan_date else 'N/A' }}</td>
+                        <td>{{ loan.due_date.strftime('%d/%m/%Y') if loan.due_date else 'N/A' }}</td>
+                        <td><span class="badge bg-danger">{{ -loan.days_remaining }} días</span></td>
+                        <td class="text-end">
+                            <button type="button" class="btn btn-sm btn-outline-primary"
+                                data-bs-toggle="modal" data-bs-target="#viewLoanModal{{ loan.id }}">
+                                <i class="bi bi-eye"></i> Ver detalles
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-success btn-return ms-1"
+                                data-loan-id="{{ loan.id }}" data-book-title="{{ loan.book_title|e }}"
+                                data-bs-toggle="tooltip" data-bs-placement="top" title="Marcar como devuelto">
+                                <i class="bi bi-check-circle"></i> Devolver
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-check-circle display-1 text-success"></i>
+            <h3 class="mt-3">¡Buen trabajo!</h3>
+            <p class="text-muted">No hay préstamos vencidos en este momento.</p>
+        </div>
+        {% endif %}
+    </div>
+    <div class="tab-pane fade {% if request.args.get('status') == 'returned' %}show active{% endif %}"
+         id="returned" role="tabpanel" aria-labelledby="returned-tab">
+        {% if returned_loans %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Libro</th>
+                        <th>Usuario</th>
+                        <th>Fecha de Préstamo</th>
+                        <th>Fecha de Devolución</th>
+                        <th>Estado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for loan in returned_loans %}
+                    <tr>
+                        <td>{{ loan.book_title or 'N/A' }}</td>
+                        <td>{{ loan.user_name or 'N/A' }}</td>
+                        <td>{{ loan.loan_date.strftime('%d/%m/%Y') if loan.loan_date else 'N/A' }}</td>
+                        <td>{{ loan.return_date.strftime('%d/%m/%Y') if loan.return_date else 'N/A' }}</td>
+                        <td><span class="badge bg-success">Devuelto</span></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5">
+            <i class="bi bi-clock-history display-1 text-muted"></i>
+            <h3 class="mt-3">No hay historial de préstamos</h3>
+            <p class="text-muted">Los préstamos devueltos aparecerán aquí.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Incluye los modales de detalles -->
+{% include 'loan_modals.html' %}
+    <div class="tab-pane fade {% if request.args.get('status') == 'overdue' %}show active{% endif %}" 
+         id="overdue" role="tabpanel" aria-labelledby="overdue-tab">
+        {% if overdue_loans %}
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Libro</th>
+                        <th>Usuario</th>
+                        <th>Fecha de Préstamo</th>
+                        <th>Fecha de Devolución</th>
+                        <th>Estado</th>
+                        <th class="text-end">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for loan in active_loans %}
+                    <tr>
                         <td>
                             <div class="d-flex align-items-center">
                                 <div class="flex-shrink-0">
@@ -96,37 +408,45 @@
                                     </div>
                                 </div>
                                 <div class="flex-grow-1 ms-3">
-                                    <h6 class="mb-0">{{ loan.book_title }}</h6>
-                                    <small class="text-muted">ID: {{ loan.id }}</small>
+                                    <h6 class="mb-0">{{ loan['book_title'] }}</h6>
+                                    <small class="text-muted">ID: {{ loan['id'] }}</small>
                                 </div>
                             </div>
                         </td>
-                        <td>{{ loan.user_name }}</td>
-                        <td>{{ loan.loan_date.strftime('%d/%m/%Y') }}</td>
-                        <td>{{ loan.due_date.strftime('%d/%m/%Y') }}</td>
+                        <td>{{ loan['user_name'] }}</td>
+                        <td>{{ loan['loan_date'].strftime('%d/%m/%Y') if loan['loan_date'] else 'N/A' }}</td>
+                        <td>{{ loan['due_date'].strftime('%d/%m/%Y') if loan['due_date'] else 'N/A' }}</td>
                         <td>
-                            {% if loan.days_remaining >= 0 %}
-                                <span class="badge {% if loan.days_remaining <= 3 %}bg-warning{% else %}bg-success{% endif %}">
-                                    {{ loan.days_remaining }} días
-                                </span>
+                            {% if loan.get('days_remaining', 0) is not none %}
+                                {% if loan.days_remaining >= 0 %}
+                                    <span class="badge {% if loan.days_remaining <= 3 %}bg-warning{% else %}bg-success{% endif %}">
+                                        {{ loan.days_remaining }} días restantes
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-danger">
+                                        Vencido hace {{ -loan.days_remaining }} días
+                                    </span>
+                                {% endif %}
                             {% else %}
-                                <span class="badge bg-danger">
-                                    Vencido hace {{ -loan.days_remaining }} días
-                                </span>
+                                <span class="badge bg-secondary">Sin fecha definida</span>
                             {% endif %}
                         </td>
                         <td class="text-end">
                             <div class="btn-group" role="group">
-                                <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#viewLoanModal{{ loan.id }}">
-                                    <i class="bi bi-eye"></i>
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#returnLoanModal{{ loan.id }}">
-                                    <i class="bi bi-check-circle"></i> Devolver
-                                </button>
-                                <button type="button" class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#renewLoanModal{{ loan.id }}">
-                                    <i class="bi bi-arrow-clockwise"></i> Renovar
-                                </button>
-                            </div>
+    <button type="button" class="btn btn-sm btn-outline-primary"
+        data-loan-id="{{ loan.id }}"
+        data-bs-toggle="modal" data-bs-target="#viewLoanModal{{ loan.id }}">
+        <i class="bi bi-eye"></i> Ver detalles
+    </button>
+    {% if loan.return_date is none %}
+    <button type="button" class="btn btn-sm btn-outline-success btn-return ms-1"
+        data-loan-id="{{ loan.id }}"
+        data-book-title="{{ loan.book_title|e }}"
+        data-bs-toggle="tooltip" data-bs-placement="top" title="Marcar como devuelto">
+        <i class="bi bi-check-circle"></i> Devolver
+    </button>
+    {% endif %}
+</div>
                         </td>
                     </tr>
                     {% endfor %}
@@ -173,9 +493,9 @@
                                 </div>
                             </div>
                         </td>
-                        <td>{{ loan.user_name }}</td>
-                        <td>{{ loan.loan_date.strftime('%d/%m/%Y') }}</td>
-                        <td>{{ loan.due_date.strftime('%d/%m/%Y') }}</td>
+                        <td>{{ loan.user_name or 'N/A' }}</td>
+                        <td>{{ loan.loan_date.strftime('%d/%m/%Y') if loan.loan_date else 'N/A' }}</td>
+                        <td>{{ loan.due_date.strftime('%d/%m/%Y') if loan.due_date else 'N/A' }}</td>
                         <td>
                             <span class="badge bg-danger">
                                 {{ -loan.days_remaining }} días
@@ -183,13 +503,19 @@
                         </td>
                         <td class="text-end">
                             <div class="btn-group" role="group">
-                                <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#viewLoanModal{{ loan.id }}">
+                                <button type="button" class="btn btn-sm btn-outline-primary" 
+                                        data-loan-id="{{ loan.id }}" 
+                                        data-bs-toggle="modal" data-bs-target="#viewLoanModal{{ loan.id }}">
                                     <i class="bi bi-eye"></i>
                                 </button>
-                                <button type="button" class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#returnLoanModal{{ loan.id }}">
+                                <button type="button" class="btn btn-sm btn-outline-success btn-return" 
+                                        data-loan-id="{{ loan.id }}" 
+                                        data-book-title="{{ loan.book_title|e }}">
                                     <i class="bi bi-check-circle"></i> Devolver
                                 </button>
-                                <button type="button" class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#renewLoanModal{{ loan.id }}">
+                                <button type="button" class="btn btn-sm btn-outline-warning btn-renew" 
+                                        data-loan-id="{{ loan.id }}" 
+                                        data-book-title="{{ loan.book_title|e }}">
                                     <i class="bi bi-arrow-clockwise"></i> Renovar
                                 </button>
                             </div>
@@ -211,42 +537,32 @@
     <!-- Pestaña de Historial -->
     <div class="tab-pane fade" id="returned" role="tabpanel" aria-labelledby="returned-tab">
         {% if returned_loans %}
-        <div class="table-responsive">
-            <table class="table table-hover align-middle">
-                <thead class="table-light">
-                    <tr>
-                        <th>Libro</th>
-                        <th>Usuario</th>
-                        <th>Fecha de Préstamo</th>
-                        <th>Fecha de Devolución</th>
-                        <th>Estado</th>
-                        <th class="text-end">Acciones</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for loan in returned_loans %}
-                    <tr>
-                        <td>{{ loan.book_title }}</td>
-                        <td>{{ loan.user_name }}</td>
-                        <td>{{ loan.loan_date.strftime('%d/%m/%Y') }}</td>
-                        <td>{{ loan.return_date.strftime('%d/%m/%Y') if loan.return_date else 'N/A' }}</td>
-                        <td>
-                            {% if loan.return_date %}
-                                <span class="badge bg-success">Devuelto</span>
-                            {% else %}
-                                <span class="badge bg-warning">Pendiente</span>
-                            {% endif %}
-                        </td>
-                        <td class="text-end">
-                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#viewLoanModal{{ loan.id }}">
-                                <i class="bi bi-eye"></i> Ver
-                            </button>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
+<div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead class="table-light">
+            <tr>
+                <th>Libro</th>
+                <th>Usuario</th>
+                <th>Fecha de Préstamo</th>
+                <th>Fecha de Devolución</th>
+                <th>Estado</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for loan in returned_loans %}
+            <tr>
+                <td>{{ loan.book_title or 'N/A' }}</td>
+                <td>{{ loan.user_name or 'N/A' }}</td>
+                <td>{{ loan.loan_date.strftime('%d/%m/%Y') if loan.loan_date else 'N/A' }}</td>
+                <td>{{ loan.return_date.strftime('%d/%m/%Y') if loan.return_date else 'N/A' }}</td>
+                <td>
+                    <span class="badge bg-success">Devuelto</span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
         {% else %}
         <div class="text-center py-5">
             <i class="bi bi-clock-history display-1 text-muted"></i>
@@ -311,21 +627,8 @@
 
 {% endblock %}
 
+{% include 'loan_modals.html' %}
 {% block extra_js %}
-<script>
-// Inicializar datepickers
-const today = new Date().toISOString().split('T')[0];
-document.getElementById('loan_date').value = today;
-
-// Establecer fecha de devolución por defecto (14 días después)
-const dueDate = new Date();
-dueDate.setDate(dueDate.getDate() + 14);
-document.getElementById('due_date').value = dueDate.toISOString().split('T')[0];
-
-// Inicializar tooltips
-var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-    return new bootstrap.Tooltip(tooltipTriggerEl);
-});
-</script>
+<!-- CSRF Token para peticiones AJAX -->
+<meta name="csrf-token" content="{{ csrf_token() if csrf_token else '' }}">
 {% endblock %}

@@ -1,0 +1,32 @@
+{# --- MODALES DE DETALLE DE PRÉSTAMO PARA TODOS LOS PRÉSTAMOS --- #}
+{% for loan in (active_loans|default([])) + (overdue_loans|default([])) + (returned_loans|default([])) %}
+<div class="modal fade" id="viewLoanModal{{ loan.id }}" tabindex="-1" aria-labelledby="viewLoanModalLabel{{ loan.id }}" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="viewLoanModalLabel{{ loan.id }}">Detalles del Préstamo</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <p><b>Libro:</b> {{ loan.book_title }}</p>
+        <p><b>Usuario:</b> {{ loan.user_full_name or loan.user_name }}</p>
+        <p><b>Fecha de Préstamo:</b> {{ loan.loan_date.strftime('%d/%m/%Y') }}</p>
+        <p><b>Fecha de Devolución:</b> {{ loan.due_date.strftime('%d/%m/%Y') if loan.due_date else 'N/A' }}</p>
+        {% if loan.return_date %}
+        <p><b>Fecha de Retorno:</b> {{ loan.return_date.strftime('%d/%m/%Y') }}</p>
+        {% endif %}
+        {% if loan.notes %}
+        <p><b>Notas:</b> {{ loan.notes }}</p>
+        {% endif %}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+        {% if not loan.return_date %}
+        <button type="button" class="btn btn-success btn-return" data-loan-id="{{ loan.id }}" data-book-title="{{ loan.book_title|e }}">Devolver</button>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
+{# --- FIN DE MODALES DE DETALLE --- #}

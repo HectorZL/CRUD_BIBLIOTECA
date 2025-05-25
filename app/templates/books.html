@@ -3,52 +3,89 @@
 {% block title %}Libros - Sistema de Biblioteca{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-    <h1 class="h2">Catálogo de Libros</h1>
-    <div class="btn-toolbar mb-2 mb-md-0">
-        <div class="btn-group me-2">
-            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addBookModal">
-                <i class="bi bi-plus-circle"></i> Nuevo Libro
-            </button>
-        </div>
-    </div>
-</div>
-
-<!-- Filtros de búsqueda -->
-<div class="card mb-4">
-    <div class="card-body">
-        <form class="row g-3">
-            <div class="col-md-4">
-                <label for="search" class="form-label">Buscar</label>
-                <input type="text" class="form-control" id="search" name="search" placeholder="Título, autor o ISBN...">
-            </div>
-            <div class="col-md-3">
-                <label for="genre" class="form-label">Género</label>
-                <select class="form-select" id="genre" name="genre">
-                    <option value="" selected>Todos los géneros</option>
-                    {% for genre in genres %}
-                    <option value="{{ genre.id }}">{{ genre.name }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="col-md-3">
-                <label for="status" class="form-label">Disponibilidad</label>
-                <select class="form-select" id="status" name="status">
-                    <option value="" selected>Todos</option>
-                    <option value="available">Disponibles</option>
-                    <option value="unavailable">Prestados</option>
-                </select>
-            </div>
-            <div class="col-md-2 d-flex align-items-end">
-                <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-search"></i> Buscar
+<div class="container-fluid">
+    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+        <h1 class="h2">Catálogo de Libros</h1>
+        <div class="btn-toolbar mb-2 mb-md-0">
+            {% if user.is_admin or session['is_admin'] %}
+            <div class="btn-group me-2">
+                <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#addBookModal">
+                    <i class="bi bi-plus-circle"></i> Nuevo Libro
                 </button>
             </div>
-        </form>
+            {% endif %}
+        </div>
     </div>
-</div>
 
-<!-- Lista de Libros -->
+    <div class="card mb-4">
+        <div class="card-body">
+            <form class="row g-3">
+                <div class="col-md-4">
+                    <label for="search" class="form-label">Buscar</label>
+                    <input type="text" class="form-control" id="search" name="search" placeholder="Título, autor o ISBN..." value="{{ search or '' }}">
+                </div>
+                <div class="col-md-3">
+                    <label for="genre" class="form-label">Género</label>
+                    <select class="form-select" id="genre" name="genre">
+                        <option value="" {% if not selected_genre %}selected{% endif %}>Todos los géneros</option>
+                        {% for genre in genres %}
+                        <option value="{{ genre.id }}" {% if selected_genre|string == genre.id|string %}selected{% endif %}>
+                            {{ genre.name }}
+                        </option>
+                        {% endfor %}
+
+{# Modales de historial de movimientos para cada libro #}
+{% for book in books.items %}
+<div class="modal fade" id="historyBookModal{{ book.id }}" tabindex="-1" aria-labelledby="historyBookModalLabel{{ book.id }}" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="historyBookModalLabel{{ book.id }}">Historial de movimientos: {{ book.title }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="movements-{{ book.id }}">
+  <div class="text-center text-muted loading-movements">
+    <i class="bi bi-clock-history display-4"></i>
+    <p>Cargando historial...</p>
+  </div>
+  <div class="movement-history-table d-none">
+    <table class="table table-sm table-bordered align-middle">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Usuario</th>
+          <th>Tipo</th>
+          <th>Cantidad</th>
+          <th>Descripción</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="no-movements d-none text-center text-muted">
+    <i class="bi bi-info-circle"></i> Sin movimientos registrados.
+  </div>
+</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">
+                        <i class="bi bi-search"></i> Buscar
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
 <div class="row">
     {% if books.items %}
         <div class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-4">
@@ -61,17 +98,28 @@
                         </span>
                         <h5 class="card-title mb-0">{{ book.title }}</h5>
                         <p class="text-muted mb-0">{{ book.author }}</p>
+                        <button type="button" class="btn btn-link btn-sm p-0 mt-1" data-bs-toggle="modal" data-bs-target="#historyBookModal{{ book.id }}">
+                            <i class="bi bi-clock-history"></i> Ver historial
+                        </button>
                     </div>
                     <div class="card-body">
-                        <p class="card-text">
-                            <small class="text-muted">
-                                <i class="bi bi-bookmark"></i> {{ book.genre_name or 'Sin género' }}
-                            </small>
-                        </p>
-                        <p class="card-text">{{ book.description|truncate(150) if book.description else 'Sin descripción disponible.' }}</p>
-                        <div class="d-flex justify-content-between align-items-center">
-                            <span class="badge bg-secondary">ISBN: {{ book.isbn or 'N/A' }}</span>
-                            <span class="text-muted">{{ book.publication_year or 'Año desconocido' }}</span>
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <p class="card-text">
+                                    <small class="text-muted">
+                                        <i class="bi bi-bookmark"></i> {{ book.genre_name or 'Sin género' }}
+                                    </small>
+                                </p>
+                                <p class="card-text">{{ book.description|truncate(100) if book.description else 'Sin descripción disponible.' }}</p>
+                            </div>
+                            
+                        </div>
+                        <div class="mt-2">
+                            <span class="badge bg-secondary me-1">ISBN: {{ book.isbn or 'N/A' }}</span>
+                            <span class="badge bg-info text-dark">{{ book.publication_year or 'Año desconocido' }}</span>
+                            {% if book.publisher %}
+                                <span class="badge bg-secondary ms-1">{{ book.publisher }}</span>
+                            {% endif %}
                         </div>
                     </div>
                     <div class="card-footer bg-transparent">
@@ -97,20 +145,63 @@
                 </div>
             </div>
             {% endfor %}
+
+{# Modales de historial de movimientos para cada libro #}
+{% for book in books.items %}
+<div class="modal fade" id="historyBookModal{{ book.id }}" tabindex="-1" aria-labelledby="historyBookModalLabel{{ book.id }}" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="historyBookModalLabel{{ book.id }}">Historial de movimientos: {{ book.title }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="movements-{{ book.id }}">
+  <div class="text-center text-muted loading-movements">
+    <i class="bi bi-clock-history display-4"></i>
+    <p>Cargando historial...</p>
+  </div>
+  <div class="movement-history-table d-none">
+    <table class="table table-sm table-bordered align-middle">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Usuario</th>
+          <th>Tipo</th>
+          <th>Cantidad</th>
+          <th>Descripción</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="no-movements d-none text-center text-muted">
+    <i class="bi bi-info-circle"></i> Sin movimientos registrados.
+  </div>
+</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
         </div>
     {% else %}
         <div class="col-12 text-center py-5">
             <i class="bi bi-book display-1 text-muted"></i>
             <h3 class="mt-3">No se encontraron libros</h3>
             <p class="text-muted">No hay libros que coincidan con tu búsqueda.</p>
+            {% if user.is_admin or session['is_admin'] %}
             <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addBookModal">
                 <i class="bi bi-plus-circle"></i> Agregar un libro
             </button>
+            {% endif %}
         </div>
     {% endif %}
 </div>
 
-<!-- Paginación -->
 {% if books.pages > 1 %}
 <nav aria-label="Page navigation" class="mt-4">
     <ul class="pagination justify-content-center">
@@ -133,6 +224,48 @@
                 <li class="page-item disabled"><span class="page-link">...</span></li>
             {% endif %}
         {% endfor %}
+
+{# Modales de historial de movimientos para cada libro #}
+{% for book in books.items %}
+<div class="modal fade" id="historyBookModal{{ book.id }}" tabindex="-1" aria-labelledby="historyBookModalLabel{{ book.id }}" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="historyBookModalLabel{{ book.id }}">Historial de movimientos: {{ book.title }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="movements-{{ book.id }}">
+  <div class="text-center text-muted loading-movements">
+    <i class="bi bi-clock-history display-4"></i>
+    <p>Cargando historial...</p>
+  </div>
+  <div class="movement-history-table d-none">
+    <table class="table table-sm table-bordered align-middle">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Usuario</th>
+          <th>Tipo</th>
+          <th>Cantidad</th>
+          <th>Descripción</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="no-movements d-none text-center text-muted">
+    <i class="bi bi-info-circle"></i> Sin movimientos registrados.
+  </div>
+</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
         
         <li class="page-item {% if not books.has_next %}disabled{% endif %}">
             <a class="page-link" 
@@ -145,7 +278,6 @@
 </nav>
 {% endif %}
 
-<!-- Modal para Agregar Libro -->
 <div class="modal fade" id="addBookModal" tabindex="-1" aria-labelledby="addBookModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
@@ -183,6 +315,48 @@
                                 {% for genre in genres %}
                                 <option value="{{ genre.id }}">{{ genre.name }}</option>
                                 {% endfor %}
+
+{# Modales de historial de movimientos para cada libro #}
+{% for book in books.items %}
+<div class="modal fade" id="historyBookModal{{ book.id }}" tabindex="-1" aria-labelledby="historyBookModalLabel{{ book.id }}" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="historyBookModalLabel{{ book.id }}">Historial de movimientos: {{ book.title }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="movements-{{ book.id }}">
+  <div class="text-center text-muted loading-movements">
+    <i class="bi bi-clock-history display-4"></i>
+    <p>Cargando historial...</p>
+  </div>
+  <div class="movement-history-table d-none">
+    <table class="table table-sm table-bordered align-middle">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Usuario</th>
+          <th>Tipo</th>
+          <th>Cantidad</th>
+          <th>Descripción</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="no-movements d-none text-center text-muted">
+    <i class="bi bi-info-circle"></i> Sin movimientos registrados.
+  </div>
+</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
                             </select>
                         </div>
                         <div class="col-md-6">
@@ -204,14 +378,514 @@
     </div>
 </div>
 
+{% for book in books.items %}
+    <div class="modal fade" id="viewBookModal{{ book.id }}" tabindex="-1" aria-labelledby="viewBookModalLabel{{ book.id }}" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="viewBookModalLabel{{ book.id }}">{{ book.title }}</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        {% if book.cover_image %}
+                            <img src="{{ url_for('static', filename='uploads/' + book.cover_image) }}" 
+                                 class="img-fluid rounded" alt="{{ book.title }}">
+                        {% else %}
+                            <div class="bg-light d-flex align-items-center justify-content-center" 
+                                 style="height: 300px; width: 100%;">
+                                <i class="bi bi-book display-1 text-muted"></i>
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="col-md-8">
+                        <h4>{{ book.title }}</h4>
+                        <p class="text-muted">por {{ book.author or 'Autor desconocido' }}</p>
+                        
+                        <div class="mb-3">
+                            <span class="badge bg-primary">{{ book.available_copies }} Disponible{% if book.available_copies != 1 %}s{% endif %}</span>
+                            <span class="badge bg-secondary ms-1">{{ book.genre_name or 'Sin género' }}</span>
+                            {% if book.publication_year %}
+                                <span class="badge bg-info text-dark ms-1">{{ book.publication_year }}</span>
+                            {% endif %}
+                        </div>
+                        
+                        <h5 class="mt-4">Detalles</h5>
+                        <dl class="row">
+                            <dt class="col-sm-3">ISBN:</dt>
+                            <dd class="col-sm-9">{{ book.isbn or 'No disponible' }}</dd>
+                            
+                            <dt class="col-sm-3">Editorial:</dt>
+                            <dd class="col-sm-9">{{ book.publisher or 'No especificada' }}</dd>
+                            
+                            <dt class="col-sm-3">Idioma:</dt>
+                            <dd class="col-sm-9">{{ book.language or 'No especificado' }}</dd>
+                            
+                            <dt class="col-sm-3">Páginas:</dt>
+                            <dd class="col-sm-9">{{ book.pages or 'No especificado' }}</dd>
+                        </dl>
+                        
+                        {% if book.description %}
+                            <h5 class="mt-3">Descripción</h5>
+                            <p class="card-text">{{ book.description }}</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer
+                {% if book.available_copies <= 0 %}
+                    justify-content-between
+                {% else %}
+                    justify-content-end
+                {% endif %}">
+                {% if book.available_copies > 0 %}
+                    <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#loanBookModal{{ book.id }}" data-bs-dismiss="modal">
+                        <i class="bi bi-bookmark-plus"></i> Prestar este libro
+                    </button>
+                {% else %}
+                    <span class="text-danger">
+                        <i class="bi bi-exclamation-triangle"></i> No hay ejemplares disponibles
+                    </span>
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cerrar</button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="loanBookModal{{ book.id }}" tabindex="-1" aria-labelledby="loanBookModalLabel{{ book.id }}" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="loanBookModalLabel{{ book.id }}">
+                    <i class="bi bi-bookmark-plus"></i> Prestar Libro
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <form class="loan-form" method="POST" action="{{ url_for('main.new_loan') }}" data-book-id="{{ book.id }}">
+    <input type="hidden" name="book_id" value="{{ book.id }}">
+                <div class="modal-body">
+                    <div class="alert alert-info">
+                        <i class="bi bi-info-circle"></i> 
+                        Estás a punto de prestar "<strong>{{ book.title }}</strong>"
+                    </div>
+                    
+                    <div class="mb-3">
+    {% if session.get('is_admin') %}
+        <label for="user_search" class="form-label">Buscar Usuario</label>
+        <input type="text" class="form-control" id="user_search" name="user_search" placeholder="Buscar por nombre o email..." autocomplete="off">
+        <input type="hidden" id="user_id" name="user_id" value="">
+        <div id="user_search_results" class="list-group mt-1 d-none position-absolute w-100" style="z-index: 1000; max-height: 200px; overflow-y: auto;"></div>
+    {% else %}
+        <input type="hidden" id="user_id" name="user_id" value="{{ session['user_id'] }}">
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i> El préstamo se registrará a tu nombre: <strong>{{ user.username }}</strong>
+        </div>
+    {% endif %}
+</div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 mb-3">
+                            <label for="loan_date_{{ book.id }}" class="form-label">
+                                <i class="bi bi-calendar3"></i> Fecha de Préstamo *
+                            </label>
+                            <input type="date" class="form-control loan-date-input" id="loan_date_{{ book.id }}" 
+                                   name="loan_date" required>
+                        </div>
+                        <div class="col-md-6 mb-3">
+                            <label for="due_date_{{ book.id }}" class="form-label">
+                                <i class="bi bi-calendar-check"></i> Fecha de Devolución *
+                            </label>
+                            <input type="date" class="form-control due-date-input" id="due_date_{{ book.id }}" 
+                                   name="due_date" required>
+                            <small class="text-muted">Máximo 15 días</small>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="notes_{{ book.id }}" class="form-label">
+                            <i class="bi bi-chat-left-text"></i> Notas (opcional)
+                        </label>
+                        <textarea class="form-control" id="notes_{{ book.id }}" 
+                                 name="notes" rows="2" 
+                                 placeholder="Ej: Para proyecto de lectura"></textarea>
+                    </div>
+                    
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        Por favor, verifica las fechas antes de confirmar el préstamo.
+                    </div>
+                    
+                    <div class="alert alert-danger d-none error-message" id="loanError{{ book.id }}"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle"></i> Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-check-circle"></i> Confirmar Préstamo
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endfor %}
+
+{# Modales de historial de movimientos para cada libro #}
+{% for book in books.items %}
+<div class="modal fade" id="historyBookModal{{ book.id }}" tabindex="-1" aria-labelledby="historyBookModalLabel{{ book.id }}" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="historyBookModalLabel{{ book.id }}">Historial de movimientos: {{ book.title }}</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+      </div>
+      <div class="modal-body">
+        <div id="movements-{{ book.id }}">
+  <div class="text-center text-muted loading-movements">
+    <i class="bi bi-clock-history display-4"></i>
+    <p>Cargando historial...</p>
+  </div>
+  <div class="movement-history-table d-none">
+    <table class="table table-sm table-bordered align-middle">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Usuario</th>
+          <th>Tipo</th>
+          <th>Cantidad</th>
+          <th>Descripción</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="no-movements d-none text-center text-muted">
+    <i class="bi bi-info-circle"></i> Sin movimientos registrados.
+  </div>
+</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endfor %}
+
+</div>
 {% endblock %}
 
-{% block extra_js %}
+{% block scripts %}
 <script>
-// Inicializar tooltips
-var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'))
-var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-    return new bootstrap.Tooltip(tooltipTriggerEl)
+document.addEventListener('DOMContentLoaded', function() {
+    // Set today's date as default for loan date
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Set default due date (14 days from today)
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + 14);
+    const dueDateStr = dueDate.toISOString().split('T')[0];
+    
+    // Set values for all date inputs
+    document.querySelectorAll('.loan-date-input').forEach(input => {
+        if (input && !input.value) {
+            input.value = today;
+        }
+    });
+    
+    document.querySelectorAll('.due-date-input').forEach(input => {
+        if (input && !input.value) {
+            input.value = dueDateStr;
+        }
+    });
+
+    // Handle user search in loan form (admin only)
+    {% if session.get('is_admin', False) %}
+    document.querySelectorAll('.loan-form').forEach(form => {
+        const userSearch = form.querySelector('input[name="user_search"]');
+        if (!userSearch) return;
+        
+        const userIdInput = form.querySelector('input[name="user_id"]');
+        const searchResults = form.querySelector('#user_search_results');
+        let searchTimeout;
+
+        userSearch.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+                const query = this.value.trim();
+                
+                if (query.length < 2) {
+                    searchResults.classList.add('d-none');
+                    return;
+                }
+
+                // Show loading state
+                searchResults.innerHTML = `
+                    <div class="list-group-item">
+                        <div class="d-flex align-items-center text-muted">
+                            <div class="spinner-border spinner-border-sm me-2" role="status">
+                                <span class="visually-hidden">Buscando...</span>
+                            </div>
+                            Buscando usuarios...
+                        </div>
+                    </div>`;
+                searchResults.classList.remove('d-none');
+
+                searchTimeout = setTimeout(() => {
+                    fetch(`/api/search_users?q=${encodeURIComponent(query)}`, {
+                        headers: {
+                            'Accept': 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Error en la búsqueda');
+                        }
+                        return response.json();
+                    })
+                    .then(users => {
+                        searchResults.innerHTML = '';
+                        
+                        if (users.length > 0) {
+                            users.forEach(user => {
+                                const userElement = document.createElement('button');
+                                userElement.type = 'button';
+                                userElement.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center';
+                                userElement.innerHTML = `
+                                    <div>
+                                        <div class="fw-bold">${user.full_name || user.username}</div>
+                                        <small class="text-muted">${user.email}</small>
+                                    </div>
+                                    <span class="badge bg-primary rounded-pill">${user.loans_count || 0} préstamos</span>
+                                `;
+                                userElement.onclick = (e) => {
+                                    e.preventDefault();
+                                    userIdInput.value = user.id;
+                                    userSearch.value = `${user.full_name || user.username} (${user.email})`;
+                                    searchResults.classList.add('d-none');
+                                    
+                                    // Clear any previous error message
+                                    const errorDiv = form.querySelector('.error-message');
+                                    if (errorDiv) {
+                                        errorDiv.textContent = '';
+                                        errorDiv.classList.add('d-none');
+                                    }
+                                };
+                                searchResults.appendChild(userElement);
+                            });
+                        } else {
+                            searchResults.innerHTML = `
+                                <div class="list-group-item">
+                                    <div class="text-center text-muted py-2">
+                                        <i class="bi bi-people fs-4 d-block mb-2"></i>
+                                        No se encontraron usuarios que coincidan con "${query}"
+                                    </div>
+                                </div>`;
+                        }
+                        searchResults.classList.remove('d-none');
+                    })
+                    .catch(error => {
+                        console.error('Error searching users:', error);
+                        searchResults.innerHTML = `
+                            <div class="list-group-item text-danger">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                Error al buscar usuarios. Intente nuevamente.
+                            </div>`;
+                        searchResults.classList.remove('d-none');
+                    });
+                }, 300);
+            });
+
+            // Close search results when clicking outside
+            document.addEventListener('click', function(e) {
+                if (!form.contains(e.target)) {
+                    searchResults.classList.add('d-none');
+                }
+            });
+        });
+        {% endif %}
+    });
+
+    // Handle form submission for loaning a book
+    document.querySelectorAll('.loan-form').forEach(form => {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const submitBtn = this.querySelector('button[type="submit"]');
+            const originalBtnText = submitBtn.innerHTML;
+            const errorDiv = this.querySelector('.error-message');
+            
+            {% if session.get('is_admin', False) %}
+                const userSearchInput = form.querySelector('input[name="user_search"]');
+                if (!formData.get('user_id') || (userSearchInput && !userSearchInput.value.trim())) {
+                    if (errorDiv) {
+                        errorDiv.textContent = 'Por favor seleccione un usuario válido';
+                        errorDiv.classList.remove('d-none');
+                    }
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalBtnText;
+                    return;
+                }
+            {% else %}
+                if (!formData.get('user_id')) {
+                    if (errorDiv) {
+                        errorDiv.textContent = 'El ID de usuario no está disponible.';
+                        errorDiv.classList.remove('d-none');
+                    }
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalBtnText;
+                    return;
+                }
+            {% endif %}
+
+            const loanDate = new Date(formData.get('loan_date'));
+            const dueDate = new Date(formData.get('due_date'));
+            const diffDays = (dueDate - loanDate) / (1000 * 60 * 60 * 24);
+
+            if (diffDays < 0 || diffDays > 15) {
+                if (errorDiv) {
+                    errorDiv.innerHTML = `
+                        <div class="alert alert-danger d-flex align-items-center" role="alert">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                            <div>La fecha de devolución debe estar entre hoy y 15 días después del préstamo.</div>
+                        </div>`;
+                    errorDiv.classList.remove('d-none');
+                }
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalBtnText;
+                return;
+            }
+            
+            // Show loading state
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Procesando...';
+            
+            if (errorDiv) {
+                errorDiv.classList.add('d-none');
+            }
+            
+            // Submit form via AJAX
+            // Get the book ID from the form's data attribute
+            const bookId = this.closest('.modal').id.replace('loanBookModal', '');
+            
+            // Ensure CSRF token is included
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '{{ csrf_token() }}';
+            
+            fetch(`/books/${bookId}/loan`, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': '{{ csrf_token() }}'  // Add CSRF token for security
+                },
+                credentials: 'same-origin'  // Include cookies for session
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => { throw err; });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    // Show success message
+                    const successAlert = document.createElement('div');
+                    successAlert.className = 'alert alert-success alert-dismissible fade show';
+                    successAlert.innerHTML = `
+                        <i class="bi bi-check-circle me-2"></i>
+                        ${data.message || 'Préstamo registrado exitosamente'}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    `;
+                    
+                    // Insert alert before the form
+                    this.parentNode.insertBefore(successAlert, this);
+                    
+                    // Close modal after delay
+                    setTimeout(() => {
+                        const modal = bootstrap.Modal.getInstance(this.closest('.modal'));
+                        if (modal) modal.hide();
+                        window.location.reload();
+                    }, 1500);
+                } else {
+                    throw new Error(data.message || 'Error al registrar el préstamo');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                const errorMessage = error.message || 'Ocurrió un error al procesar la solicitud';
+                
+                // Show error message
+                if (errorDiv) {
+                    errorDiv.innerHTML = `
+                        <div class="alert alert-danger d-flex align-items-center" role="alert">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                            <div>${errorMessage}</div>
+                        </div>
+                    `;
+                    errorDiv.classList.remove('d-none');
+                }
+                
+                // Scroll to error message
+                errorDiv?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            })
+            .finally(() => {
+                // Reset button state
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalBtnText;
+            });
+        });
+    });
+});
+// --- Cargar historial de movimientos en el modal ---
+
+document.addEventListener('DOMContentLoaded', function() {
+  document.querySelectorAll('[id^="historyBookModal"]').forEach(function(modal) {
+    modal.addEventListener('show.bs.modal', function (event) {
+      var bookId = this.id.replace('historyBookModal', '');
+      var container = document.getElementById('movements-' + bookId);
+      var loading = container.querySelector('.loading-movements');
+      var tableWrap = container.querySelector('.movement-history-table');
+      var tableBody = container.querySelector('tbody');
+      var noMovements = container.querySelector('.no-movements');
+      // Reset states
+      loading.classList.remove('d-none');
+      tableWrap.classList.add('d-none');
+      noMovements.classList.add('d-none');
+      tableBody.innerHTML = '';
+      // Fetch movements
+      fetch('/api/books/' + bookId + '/movements')
+        .then(response => response.json())
+        .then(data => {
+          loading.classList.add('d-none');
+          if (data.success && data.movements.length > 0) {
+            tableWrap.classList.remove('d-none');
+            data.movements.forEach(function(mv) {
+              var row = document.createElement('tr');
+              row.innerHTML = `
+                <td>${new Date(mv.created_at).toLocaleString()}</td>
+                <td>${mv.username}</td>
+                <td>${mv.movement_type.charAt(0).toUpperCase() + mv.movement_type.slice(1)}</td>
+                <td>${mv.quantity}</td>
+                <td>${mv.description || ''}</td>
+              `;
+              tableBody.appendChild(row);
+            });
+          } else {
+            noMovements.classList.remove('d-none');
+          }
+        })
+        .catch(err => {
+          loading.classList.add('d-none');
+          noMovements.classList.remove('d-none');
+          noMovements.textContent = 'Error al cargar el historial.';
+        });
+    });
+  });
 });
 </script>
 {% endblock %}

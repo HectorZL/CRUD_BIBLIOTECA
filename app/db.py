@@ -70,6 +70,9 @@ def init_app(app):
         logger.error(f"Error al inicializar la base de datos: {e}")
         raise
 
+    
+    
+    
 def create_tables():
     """Crear tablas de la base de datos si no existen"""
     try:
@@ -140,6 +143,34 @@ def create_tables():
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
             FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
         )""")
+        
+        # Create book_movements table
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS book_movements (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            book_id INT NOT NULL,
+            user_id INT NOT NULL,
+            movement_type ENUM('alta', 'prestamo', 'devolucion', 'ajuste') NOT NULL,
+            quantity INT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            description VARCHAR(255),
+            FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        )""")
+        # Create book_movements table
+        cur.execute("""
+        CREATE TABLE IF NOT EXISTS book_movements (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        book_id INT NOT NULL,
+        user_id INT NOT NULL,
+        movement_type VARCHAR(20) NOT NULL,
+        quantity INT NOT NULL,
+        description VARCHAR(255),
+        created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (book_id) REFERENCES books(id),
+        FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+        """)
         
         # Insert default admin user if not exists
         cur.execute("SELECT * FROM users WHERE username = 'admin'")
