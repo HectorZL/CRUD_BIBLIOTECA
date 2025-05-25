@@ -16,7 +16,7 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-bp = Blueprint('main', __name__)
+bp = Blueprint('main', __name__, url_prefix='')
 
 # Ruta principal - Redirige al dashboard
 @bp.route('/')
@@ -106,6 +106,29 @@ def dashboard():
                 logger.error(f"Error al cerrar el cursor: {e}")
         # La conexión se cierra automáticamente cuando termina la solicitud
 
+class Pagination:
+    def __init__(self, items, page, per_page, total):
+        self.items = items
+        self.page = page
+        self.per_page = per_page
+        self.total = total
+        self.pages = (total + per_page - 1) // per_page if total > 0 else 1
+        self.has_prev = page > 1
+        self.has_next = page < self.pages
+        self.prev_num = page - 1 if page > 1 else None
+        self.next_num = page + 1 if page < self.pages else None
+    
+    def iter_pages(self, left_edge=2, left_current=3, right_current=4, right_edge=2):
+        last = 0
+        for num in range(1, self.pages + 1):
+            if (num <= left_edge or 
+                (num > self.page - left_current - 1 and num < self.page + right_current) or 
+                num > self.pages - right_edge):
+                if last and num - last > 1:
+                    yield None
+                yield num
+                last = num
+
 # Ruta para mostrar el catálogo de libros
 @bp.route('/books')
 def books():
@@ -114,6 +137,8 @@ def books():
     
     search = request.args.get('search', '')
     genre = request.args.get('genre', '')
+    page = request.args.get('page', 1, type=int)
+    per_page = 10  # Número de libros por página
     
     conn = get_db_connection()
     cur = get_cursor()
@@ -123,38 +148,71 @@ def books():
         cur.execute("SELECT * FROM genres ORDER BY name")
         genres = cur.fetchall()
         
-        # Construir la consulta
-        query = """
-            SELECT b.*, g.name as genre_name, 
-                   (SELECT COUNT(*) FROM loans WHERE book_id = b.id AND return_date IS NULL) as active_loans
+        # Construir la consulta base
+        base_query = """
             FROM books b
             LEFT JOIN genres g ON b.genre_id = g.id
             WHERE 1=1
         """
+        
+        # Construir la consulta de conteo
+        count_query = "SELECT COUNT(*) as total " + base_query
+        
+        # Construir la consulta de datos
+        data_query = """
+            SELECT b.*, g.name as genre_name, 
+                   (SELECT COUNT(*) FROM loans WHERE book_id = b.id AND return_date IS NULL) as active_loans
+            """ + base_query
+        
+        # Añadir filtros
         params = []
         
         if search:
-            query += " AND (b.title LIKE %s OR b.author LIKE %s OR b.isbn = %s)"
+            search_condition = " AND (b.title LIKE %s OR b.author LIKE %s OR b.isbn = %s)"
             search_term = f"%{search}%"
             params.extend([search_term, search_term, search])
+            count_query += search_condition
+            data_query += search_condition
             
         if genre and genre.isdigit():
-            query += " AND b.genre_id = %s"
+            genre_condition = " AND b.genre_id = %s"
             params.append(genre)
-            
-        query += " ORDER BY b.title"
+            count_query += genre_condition
+            data_query += genre_condition
         
-        cur.execute(query, tuple(params))
-        books = cur.fetchall()
+        # Obtener el total de registros
+        cur.execute(count_query, tuple(params))
+        total = cur.fetchone()['total']
+        
+        # Crear objeto de paginación vacío si no hay resultados
+        if total == 0:
+            pagination = Pagination([], page, per_page, 0)
+        else:
+            # Añadir orden y paginación
+            data_query += " ORDER BY b.title"
+            data_query += " LIMIT %s OFFSET %s"
+            params.extend([per_page, (page - 1) * per_page])
+            
+            # Ejecutar consulta de datos
+            cur.execute(data_query, tuple(params))
+            books = cur.fetchall()
+            
+            # Crear objeto de paginación
+            pagination = Pagination(books, page, per_page, total)
         
         return render_template('books.html', 
-                             books=books, 
+                             books=pagination, 
                              genres=genres,
                              search=search,
                              selected_genre=genre)
     except Exception as e:
-        flash(f'Error al cargar los libros: {str(e)}', 'error')
-        return render_template('books.html', books=[], genres=[])
+        logger.error(f"Error en la ruta de libros: {str(e)}", exc_info=True)
+        flash('Error al cargar los libros. Por favor, intente nuevamente.', 'error')
+        return render_template('books.html', 
+                           books=Pagination([], 1, 10, 0),
+                           genres=[],
+                           search=search,
+                           selected_genre=genre)
     finally:
         if 'cur' in locals():
             cur.close()
@@ -374,6 +432,68 @@ def search_users():
         return jsonify(users)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+    finally:
+        if 'cur' in locals():
+            cur.close()
+        if 'conn' in locals():
+            conn.close()
+
+# Ruta para agregar un nuevo libro
+@bp.route('/books/add', methods=['POST'])
+@login_required
+def add_book():
+    if not session.get('is_admin', False):
+        flash('No tienes permiso para realizar esta acción', 'error')
+        return redirect(url_for('main.books'))
+    
+    try:
+        # Obtener datos del formulario
+        title = request.form.get('title')
+        author = request.form.get('author')
+        isbn = request.form.get('isbn')
+        publication_year = request.form.get('publication_year')
+        publisher = request.form.get('publisher')
+        genre_id = request.form.get('genre_id')
+        total_copies = int(request.form.get('total_copies', 1))
+        description = request.form.get('description', '')
+        
+        # Validar campos requeridos
+        if not all([title, author]):
+            flash('Título y autor son campos requeridos', 'error')
+            return redirect(url_for('main.books'))
+        
+        # Insertar el nuevo libro en la base de datos
+        conn = get_db_connection()
+        cur = get_cursor()
+        
+        query = """
+            INSERT INTO books 
+            (title, author, isbn, publication_year, publisher, genre_id, total_copies, available_copies, description)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+        """
+        params = (
+            title, 
+            author, 
+            isbn if isbn else None,
+            int(publication_year) if publication_year and publication_year.isdigit() else None,
+            publisher if publisher else None,
+            int(genre_id) if genre_id and genre_id.isdigit() else None,
+            max(1, total_copies),  # Asegurar al menos 1 copia
+            max(1, total_copies),  # Copias disponibles igual al total
+            description if description else None
+        )
+        
+        cur.execute(query, params)
+        conn.commit()
+        
+        flash('Libro agregado exitosamente', 'success')
+        return redirect(url_for('main.books'))
+        
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Error al agregar libro: {str(e)}")
+        flash('Error al agregar el libro. Por favor, intente nuevamente.', 'error')
+        return redirect(url_for('main.books'))
     finally:
         if 'cur' in locals():
             cur.close()

@@ -47,11 +47,12 @@ def create_app():
     
         # Registrar blueprints
         try:
-            from .routes import bp as main_blueprint
-            from .auth import bp as auth_blueprint
+            from . import routes
+            from . import auth
             
-            app.register_blueprint(main_blueprint)
-            app.register_blueprint(auth_blueprint, url_prefix='/auth')
+            # Registrar blueprints
+            app.register_blueprint(routes.bp)  # No prefix for main routes
+            app.register_blueprint(auth.bp, url_prefix='/auth')  # Auth routes under /auth
             logger.info("Blueprints registrados correctamente")
         except Exception as e:
             logger.error(f"Error al registrar blueprints: {e}", exc_info=True)
