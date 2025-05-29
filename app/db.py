@@ -53,7 +53,7 @@ def init_app(app):
         if conn.is_connected():
             logger.info("Conexión a la base de datos exitosa")
             
-            # Verificar si las tablas existen
+            # Verificar la existencias de las tablas
             cursor = conn.cursor(dictionary=True)
             cursor.execute("SHOW TABLES")
             tables = [table['Tables_in_' + os.getenv('MYSQL_DB', 'defaultdb')] for table in cursor.fetchall()]
