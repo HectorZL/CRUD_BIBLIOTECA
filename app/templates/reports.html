@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+
+{% block title %}Informes - Biblioteca{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">Generar Informes</h1>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+    
+    <div class="row">
+        <!-- Libros Populares -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Libros Más Populares</h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">Genera un informe con los libros más prestados en el período seleccionado.</p>
+                    <div class="btn-group" role="group" aria-label="Período de libros populares">
+                        <button type="button" class="btn btn-outline-primary" onclick="generateReport('popular_books', 'day')">
+                            <i class="bi bi-calendar-day"></i> Hoy
+                        </button>
+                        <button type="button" class="btn btn-outline-primary" onclick="generateReport('popular_books', 'week')">
+                            <i class="bi bi-calendar-week"></i> Esta Semana
+                        </button>
+                        <button type="button" class="btn btn-outline-primary" onclick="generateReport('popular_books', 'year')">
+                            <i class="bi bi-calendar-month"></i> Este Año
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Préstamos por Género -->
+        <div class="col-md-6 mb-4">
+            <div class="card h-100">
+                <div class="card-header bg-success text-white">
+                    <h5 class="mb-0">Préstamos por Género</h5>
+                </div>
+                <div class="card-body">
+                    <p class="card-text">Genera un informe con estadísticas de préstamos por género.</p>
+                    <div class="btn-group" role="group" aria-label="Período de préstamos por género">
+                        <button type="button" class="btn btn-outline-success" onclick="generateReport('loans_by_genre', 'day')">
+                            <i class="bi bi-calendar-day"></i> Hoy
+                        </button>
+                        <button type="button" class="btn btn-outline-success" onclick="generateReport('loans_by_genre', 'week')">
+                            <i class="bi bi-calendar-week"></i> Esta Semana
+                        </button>
+                        <button type="button" class="btn btn-outline-success" onclick="generateReport('loans_by_genre', 'year')">
+                            <i class="bi bi-calendar-month"></i> Este Año
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Sección de informes programados (puede implementarse en el futuro) -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5 class="mb-0">Informes Programados</h5>
+        </div>
+        <div class="card-body">
+            <p class="text-muted">Próximamente: Configura informes automáticos que se enviarán por correo electrónico.</p>
+            <button class="btn btn-outline-secondary" disabled>
+                <i class="bi bi-clock-history"></i> Configurar Informe Programado
+            </button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function generateReport(reportType, period) {
+    // Mostrar indicador de carga
+    const btn = event.target.closest('button');
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        Generando...
+    `;
+    
+    // Generar el informe
+    const url = `{{ url_for('main.generate_report') }}?type=${reportType}&period=${period}`;
+    
+    // Usar fetch para manejar la descarga del archivo
+    fetch(url)
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => { throw err; });
+            }
+            return response.blob();
+        })
+        .then(blob => {
+            // Crear un enlace temporal para descargar el archivo
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${reportType}_${period}_${new Date().toISOString().split('T')[0]}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            // Mostrar notificación de éxito
+            showToast('Informe generado', 'El informe se ha generado correctamente.', 'success');
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            const errorMsg = error.error || 'Error al generar el informe';
+            showToast('Error', errorMsg, 'danger');
+        })
+        .finally(() => {
+            // Restaurar el botón
+            btn.disabled = false;
+            btn.innerHTML = originalHtml;
+        });
+}
+
+function showToast(title, message, type = 'info') {
+    // Crear el toast dinámicamente
+    const toastId = 'toast-' + Date.now();
+    const toastHtml = `
+        <div class="toast align-items-center text-white bg-${type} border-0" id="${toastId}" role="alert" aria-live="assertive" aria-atomic="true">
+            <div class="d-flex">
+                <div class="toast-body">
+                    <strong>${title}</strong><br>${message}
+                </div>
+                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+            </div>
+        </div>
+    `;
+    
+    // Agregar el toast al contenedor
+    const toastContainer = document.getElementById('toastContainer');
+    if (!toastContainer) {
+        // Crear el contenedor si no existe
+        const container = document.createElement('div');
+        container.id = 'toastContainer';
+        container.style.position = 'fixed';
+        container.style.top = '20px';
+        container.style.right = '20px';
+        container.style.zIndex = '1100'; // Por encima del modal
+        document.body.appendChild(container);
+    }
+    
+    document.getElementById('toastContainer').insertAdjacentHTML('beforeend', toastHtml);
+    
+    // Inicializar y mostrar el toast
+    const toastEl = document.getElementById(toastId);
+    const toast = new bootstrap.Toast(toastEl, { autohide: true, delay: 5000 });
+    toast.show();
+    
+    // Eliminar el toast después de que se oculte
+    toastEl.addEventListener('hidden.bs.toast', function () {
+        toastEl.remove();
+    });
+}
+
+// Inicializar tooltips
+document.addEventListener('DOMContentLoaded', function() {
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+});
+</script>
+{% endblock %}

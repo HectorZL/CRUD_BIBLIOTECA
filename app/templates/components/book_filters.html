@@ -1,0 +1,70 @@
+<div class="card mb-4">
+    <div class="card-body">
+        <form class="row g-3" id="bookFilterForm">
+            <div class="col-md-4">
+                <label for="search" class="form-label">Buscar</label>
+                <div class="input-group">
+                    <input type="text" class="form-control" id="search" name="search" 
+                           placeholder="Título, autor o ISBN..." value="{{ search or '' }}">
+                    <button class="btn btn-outline-secondary" type="button" id="clearSearch">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <label for="genre" class="form-label">Género</label>
+                <select class="form-select" id="genre" name="genre">
+                    <option value="" {% if not selected_genre %}selected{% endif %}>Todos los géneros</option>
+                    {% for genre in genres %}
+                    <option value="{{ genre.id }}" {% if selected_genre|string == genre.id|string %}selected{% endif %}>
+                        {{ genre.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary w-100">
+                    <i class="bi bi-search"></i> Buscar
+                </button>
+            </div>
+            <div class="col-md-3 d-flex align-items-end justify-content-end">
+                <button type="button" class="btn btn-outline-secondary me-2" id="resetFilters">
+                    <i class="bi bi-arrow-counterclockwise"></i> Restablecer
+                </button>
+                {% if user.is_admin or session['is_admin'] %}
+                <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#addBookModal">
+                    <i class="bi bi-plus-lg"></i> Nuevo Libro
+                </button>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Reset filters
+    document.getElementById('resetFilters').addEventListener('click', function() {
+        window.location.href = '{{ url_for("main.books") }}';
+    });
+    
+    // Clear search
+    document.getElementById('clearSearch').addEventListener('click', function() {
+        document.getElementById('search').value = '';
+        document.getElementById('bookFilterForm').submit();
+    });
+    
+    // Submit form on genre change
+    document.getElementById('genre').addEventListener('change', function() {
+        document.getElementById('bookFilterForm').submit();
+    });
+    
+    // Submit form on Enter key in search
+    document.getElementById('search').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            document.getElementById('bookFilterForm').submit();
+        }
+    });
+});
+</script>

@@ -1,0 +1,53 @@
+<div class="col">
+    <div class="card h-100">
+        <div class="card-header">
+            <span class="badge {% if book.available_copies > 0 %}bg-success{% else %}bg-danger{% endif %} float-end">
+                {{ book.available_copies }} disponible{% if book.available_copies != 1 %}s{% endif %}
+            </span>
+            <h5 class="card-title mb-0">{{ book.title }}</h5>
+            <p class="text-muted mb-0">{{ book.author }}</p>
+            <button type="button" class="btn btn-link btn-sm p-0 mt-1" data-bs-toggle="modal" data-bs-target="#historyBookModal{{ book.id }}">
+                <i class="bi bi-clock-history"></i> Ver historial
+            </button>
+        </div>
+        <div class="card-body">
+            <div class="d-flex justify-content-between align-items-start">
+                <div>
+                    <p class="card-text">
+                        <small class="text-muted">
+                            <i class="bi bi-bookmark"></i> {{ book.genre_name or 'Sin género' }}
+                        </small>
+                    </p>
+                    <p class="card-text">{{ book.description|truncate(100) if book.description else 'Sin descripción disponible.' }}</p>
+                </div>
+            </div>
+            <div class="mt-2">
+                <span class="badge bg-secondary me-1">ISBN: {{ book.isbn or 'N/A' }}</span>
+                <span class="badge bg-info text-dark">{{ book.publication_year or 'Año desconocido' }}</span>
+                {% if book.publisher %}
+                    <span class="badge bg-secondary ms-1">{{ book.publisher }}</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="card-footer bg-transparent">
+            <div class="btn-group w-100">
+                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#viewBookModal{{ book.id }}">
+                    <i class="bi bi-eye"></i> Ver
+                </button>
+                {% if book.available_copies > 0 %}
+                <button class="btn btn-sm btn-outline-success" data-bs-toggle="modal" data-bs-target="#loanBookModal{{ book.id }}">
+                    <i class="bi bi-bookmark-plus"></i> Prestar
+                </button>
+                {% endif %}
+                {% if session.get('is_admin', False) %}
+                <button class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#editBookModal{{ book.id }}">
+                    <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-outline-danger" data-bs-toggle="modal" data-bs-target="#deleteBookModal{{ book.id }}">
+                    <i class="bi bi-trash"></i>
+                </button>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>

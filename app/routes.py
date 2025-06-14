@@ -1,5 +1,6 @@
-from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, current_app
+from flask import Blueprint, render_template, request, redirect, url_for, flash, session, jsonify, current_app, send_file, Response
 from .db import get_db_connection, get_cursor
+from .reports import generate_pdf_report
 from .decorators import login_required, admin_required
 from datetime import datetime, timedelta
 import json
@@ -138,7 +139,7 @@ def books():
     try:
         # Obtener géneros para el filtro
         cur.execute("SELECT * FROM genres ORDER BY name")
-        genres = cur.fetchall()
+        genres = cur.fetchall() or []
         
         # Consulta base para traer SIEMPRE el número actualizado de copias
         base_query = """
@@ -149,7 +150,8 @@ def books():
         count_query = "SELECT COUNT(*) as total " + base_query
         data_query = """
             SELECT b.*, g.name as genre_name,
-                   (SELECT COUNT(*) FROM loans WHERE book_id = b.id AND return_date IS NULL) as active_loans
+                   (SELECT COUNT(*) FROM loans WHERE book_id = b.id AND return_date IS NULL) as active_loans,
+                   g.id as genre_id  -- Asegurarse de que genre_id esté disponible
             """ + base_query
         params = []
         if search:
@@ -184,7 +186,8 @@ def books():
                               search=search,
                               selected_genre=genre,
                               user=user,
-                              current_user=user)
+                              current_user=user,
+                              now=datetime.now())
     except Exception as e:
         logger.error(f"Error en la ruta de libros: {str(e)}", exc_info=True)
         flash('Error al cargar los libros. Por favor, intente nuevamente.', 'error')
@@ -667,6 +670,418 @@ def add_book():
             cur.close()
         if 'conn' in locals():
             conn.close()
+
+# Ruta para editar un libro existente
+@bp.route('/books/edit/<int:book_id>', methods=['POST'])
+@login_required
+def edit_book(book_id):
+    if not session.get('is_admin', False):
+        flash('No tienes permiso para realizar esta acción', 'error')
+        return redirect(url_for('main.books'))
+    
+    try:
+        # Obtener datos del formulario
+        title = request.form.get('title')
+        author = request.form.get('author')
+        isbn = request.form.get('isbn')
+        publication_year = request.form.get('publication_year')
+        publisher = request.form.get('publisher')
+        genre_id = request.form.get('genre_id')
+        total_copies = int(request.form.get('total_copies', 1))
+        description = request.form.get('description', '')
+        
+        # Validar campos requeridos
+        if not all([title, author]):
+            flash('Título y autor son campos requeridos', 'error')
+            return redirect(url_for('main.books'))
+        
+        # Conectar a la base de datos
+        conn = get_db_connection()
+        cur = get_cursor()
+        
+        # Obtener el libro actual para verificar copias disponibles
+        cur.execute("""
+            SELECT total_copies, available_copies 
+            FROM books 
+            WHERE id = %s
+        """, (book_id,))
+        
+        book = cur.fetchone()
+        if not book:
+            flash('Libro no encontrado', 'error')
+            return redirect(url_for('main.books'))
+        
+        current_total = book['total_copies']
+        current_available = book['available_copies']
+        
+        # Calcular nuevas copias disponibles
+        copies_diff = total_copies - current_total
+        new_available = current_available + copies_diff
+        
+        # Asegurar que no haya copias disponibles negativas
+        if new_available < 0:
+            flash('No se pueden reducir las copias totales por debajo del número de copias prestadas', 'error')
+            return redirect(url_for('main.books'))
+        
+        # Actualizar el libro en la base de datos
+        query = """
+            UPDATE books 
+            SET title = %s,
+                author = %s,
+                isbn = %s,
+                publication_year = %s,
+                publisher = %s,
+                genre_id = %s,
+                total_copies = %s,
+                available_copies = %s,
+                description = %s
+            WHERE id = %s
+        """
+        params = (
+            title, 
+            author, 
+            isbn if isbn else None,
+            int(publication_year) if publication_year and publication_year.isdigit() else None,
+            publisher if publisher else None,
+            int(genre_id) if genre_id and genre_id.isdigit() else None,
+            max(1, total_copies),  # Asegurar al menos 1 copia
+            max(0, new_available),  # No permitir negativos
+            description if description else None,
+            book_id
+        )
+        
+        cur.execute(query, params)
+        
+        # Registrar el movimiento
+        if copies_diff != 0:
+            movement_type = 'Ajuste de inventario'
+            details = f"Copias cambiadas de {current_total} a {total_copies}"
+            
+            cur.execute("""
+                INSERT INTO book_movements 
+                (book_id, movement_type, details, admin_id)
+                VALUES (%s, %s, %s, %s)
+            """, (book_id, movement_type, details, session['user_id']))
+        
+        conn.commit()
+        
+        flash('Libro actualizado exitosamente', 'success')
+        return redirect(url_for('main.books'))
+        
+    except Exception as e:
+        if 'conn' in locals():
+            conn.rollback()
+        logger.error(f"Error al actualizar libro: {str(e)}")
+        flash('Error al actualizar el libro. Por favor, intente nuevamente.', 'error')
+        return redirect(url_for('main.books'))
+    finally:
+        if 'cur' in locals():
+            cur.close()
+        if 'conn' in locals():
+            conn.close()
+
+# Ruta para eliminar un libro
+@bp.route('/books/delete/<int:book_id>', methods=['POST'])
+@login_required
+def delete_book(book_id):
+    if not session.get('is_admin', False):
+        flash('No tienes permiso para realizar esta acción', 'error')
+        return redirect(url_for('main.books'))
+    
+    conn = get_db_connection()
+    cur = get_cursor()
+    
+    try:
+        # Verificar si el libro existe
+        cur.execute("""
+            SELECT b.*, COUNT(l.id) as active_loans
+            FROM books b
+            LEFT JOIN loans l ON b.id = l.book_id AND l.return_date IS NULL
+            WHERE b.id = %s
+            GROUP BY b.id
+        """, (book_id,))
+        
+        book = cur.fetchone()
+        
+        if not book:
+            flash('Libro no encontrado', 'error')
+            return redirect(url_for('main.books'))
+        
+        # Verificar si hay préstamos activos
+        if book['active_loans'] > 0:
+            flash('No se puede eliminar el libro porque tiene préstamos activos', 'error')
+            return redirect(url_for('main.books'))
+        
+        # Iniciar transacción
+        conn.begin()
+        
+        try:
+            # 1. Eliminar registros relacionados en book_movements
+            cur.execute("""
+                DELETE FROM book_movements 
+                WHERE book_id = %s
+            """, (book_id,))
+            
+            # 2. Eliminar reservas relacionadas
+            cur.execute("""
+                DELETE FROM reservations 
+                WHERE book_id = %s
+            """, (book_id,))
+            
+            # 3. Eliminar préstamos (solo deberían ser devueltos si pasamos la validación anterior)
+            cur.execute("""
+                DELETE FROM loans 
+                WHERE book_id = %s
+            """, (book_id,))
+            
+            # 4. Finalmente, eliminar el libro
+            cur.execute("""
+                DELETE FROM books 
+                WHERE id = %s
+            """, (book_id,))
+            
+            # Confirmar la transacción
+            conn.commit()
+            
+            flash('Libro eliminado exitosamente', 'success')
+            
+        except Exception as e:
+            # Revertir la transacción en caso de error
+            conn.rollback()
+            logger.error(f"Error al eliminar libro {book_id}: {str(e)}")
+            flash('Ocurrió un error al eliminar el libro', 'error')
+            
+    except Exception as e:
+        logger.error(f"Error al procesar eliminación de libro {book_id}: {str(e)}")
+        flash('Ocurrió un error al procesar la solicitud', 'error')
+        
+    finally:
+        cur.close()
+        conn.close()
+    
+    return redirect(url_for('main.books'))
+
+# Ruta para gestionar géneros
+@bp.route('/genres')
+@login_required
+def manage_genres():
+    if not session.get('is_admin', False):
+        flash('No tienes permiso para acceder a esta sección', 'error')
+        return redirect(url_for('main.books'))
+    
+    conn = get_db_connection()
+    cur = get_cursor()
+    
+    try:
+        # Obtener todos los géneros con conteo de libros
+        cur.execute("""
+            SELECT g.*, COUNT(b.id) as book_count
+            FROM genres g
+            LEFT JOIN books b ON g.id = b.genre_id
+            GROUP BY g.id
+            ORDER BY g.name
+        """)
+        
+        genres = cur.fetchall()
+        return render_template('genres.html', genres=genres)
+        
+    except Exception as e:
+        logger.error(f"Error al obtener la lista de géneros: {str(e)}")
+        flash('Error al cargar la lista de géneros', 'error')
+        return redirect(url_for('main.books'))
+    finally:
+        cur.close()
+        conn.close()
+
+# Ruta para agregar un nuevo género
+@bp.route('/genres/add', methods=['POST'])
+@login_required
+def add_genre():
+    if not session.get('is_admin', False):
+        flash('No tienes permiso para realizar esta acción', 'error')
+        return redirect(url_for('main.books'))
+    
+    name = request.form.get('name', '').strip()
+    description = request.form.get('description', '').strip()
+    
+    if not name:
+        flash('El nombre del género es requerido', 'error')
+        return redirect(url_for('main.manage_genres'))
+    
+    conn = get_db_connection()
+    cur = get_cursor()
+    
+    try:
+        # Verificar si ya existe un género con el mismo nombre
+        cur.execute("SELECT id FROM genres WHERE name = %s", (name,))
+        if cur.fetchone():
+            flash('Ya existe un género con ese nombre', 'error')
+            return redirect(url_for('main.manage_genres'))
+        
+        # Insertar el nuevo género
+        cur.execute("""
+            INSERT INTO genres (name, description)
+            VALUES (%s, %s)
+        """, (name, description if description else None))
+        
+        conn.commit()
+        flash('Género agregado exitosamente', 'success')
+        
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Error al agregar género: {str(e)}")
+        flash('Error al agregar el género. Por favor, intente nuevamente.', 'error')
+    finally:
+        cur.close()
+        conn.close()
+    
+    return redirect(url_for('main.manage_genres'))
+
+# Ruta para editar un género existente
+@bp.route('/genres/edit/<int:genre_id>', methods=['POST'])
+@login_required
+def edit_genre(genre_id):
+    if not session.get('is_admin', False):
+        flash('No tienes permiso para realizar esta acción', 'error')
+        return redirect(url_for('main.books'))
+    
+    name = request.form.get('name', '').strip()
+    description = request.form.get('description', '').strip()
+    
+    if not name:
+        flash('El nombre del género es requerido', 'error')
+        return redirect(url_for('main.manage_genres'))
+    
+    conn = get_db_connection()
+    cur = get_cursor()
+    
+    try:
+        # Verificar si el género existe
+        cur.execute("SELECT id FROM genres WHERE id = %s", (genre_id,))
+        if not cur.fetchone():
+            flash('Género no encontrado', 'error')
+            return redirect(url_for('main.manage_genres'))
+        
+        # Verificar si ya existe otro género con el mismo nombre
+        cur.execute("SELECT id FROM genres WHERE name = %s AND id != %s", (name, genre_id))
+        if cur.fetchone():
+            flash('Ya existe otro género con ese nombre', 'error')
+            return redirect(url_for('main.manage_genres'))
+        
+        # Actualizar el género
+        cur.execute("""
+            UPDATE genres 
+            SET name = %s, 
+                description = %s,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s
+        """, (name, description if description else None, genre_id))
+        
+        conn.commit()
+        flash('Género actualizado exitosamente', 'success')
+        
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Error al actualizar género {genre_id}: {str(e)}")
+        flash('Error al actualizar el género. Por favor, intente nuevamente.', 'error')
+    finally:
+        cur.close()
+        conn.close()
+    
+    return redirect(url_for('main.manage_genres'))
+
+# Ruta para eliminar un género
+@bp.route('/genres/delete/<int:genre_id>', methods=['POST'])
+@login_required
+def delete_genre(genre_id):
+    if not session.get('is_admin', False):
+        flash('No tienes permiso para realizar esta acción', 'error')
+        return redirect(url_for('main.books'))
+    
+    conn = get_db_connection()
+    cur = get_cursor()
+    
+    try:
+        # Verificar si el género existe y no tiene libros asociados
+        cur.execute("""
+            SELECT g.id, COUNT(b.id) as book_count
+            FROM genres g
+            LEFT JOIN books b ON g.id = b.genre_id
+            WHERE g.id = %s
+            GROUP BY g.id
+        """, (genre_id,))
+        
+        genre = cur.fetchone()
+        
+        if not genre:
+            flash('Género no encontrado', 'error')
+            return redirect(url_for('main.manage_genres'))
+        
+        if genre['book_count'] > 0:
+            flash('No se puede eliminar el género porque tiene libros asociados', 'error')
+            return redirect(url_for('main.manage_genres'))
+        
+        # Eliminar el género
+        cur.execute("DELETE FROM genres WHERE id = %s", (genre_id,))
+        conn.commit()
+        
+        flash('Género eliminado exitosamente', 'success')
+        
+    except Exception as e:
+        conn.rollback()
+        logger.error(f"Error al eliminar género {genre_id}: {str(e)}")
+        flash('Error al eliminar el género. Por favor, intente nuevamente.', 'error')
+    finally:
+        cur.close()
+        conn.close()
+    
+    return redirect(url_for('main.manage_genres'))
+
+# Ruta para el panel de informes
+@bp.route('/reports')
+@login_required
+def reports():
+    if not session.get('is_admin', False):
+        flash('No tienes permiso para acceder a esta sección', 'error')
+        return redirect(url_for('main.books'))
+    
+    return render_template('reports.html')
+
+# Ruta para generar informes en PDF
+@bp.route('/reports/generate')
+@login_required
+def generate_report():
+    if not session.get('is_admin', False):
+        return jsonify({'error': 'No autorizado'}), 403
+    
+    report_type = request.args.get('type')
+    period = request.args.get('period', 'week')
+    
+    if not report_type or period not in ['day', 'week', 'year']:
+        return jsonify({'error': 'Parámetros inválidos'}), 400
+    
+    try:
+        # Generate the PDF
+        pdf_buffer = generate_pdf_report(report_type, period)
+        
+        # Determine filename
+        filenames = {
+            'popular_books': 'libros_populares',
+            'loans_by_genre': 'prestamos_por_genero'
+        }
+        filename = f"{filenames.get(report_type, 'reporte')}_{period}_{datetime.now().strftime('%Y%m%d')}.pdf"
+        
+        # Return the PDF as a download
+        return send_file(
+            pdf_buffer,
+            as_attachment=True,
+            download_name=filename,
+            mimetype='application/pdf'
+        )
+        
+    except Exception as e:
+        logger.error(f"Error al generar el informe: {str(e)}")
+        return jsonify({'error': 'Error al generar el informe'}), 500
 
 # Ruta para buscar libros (usada en autocompletado)
 @bp.route('/api/search_books')
