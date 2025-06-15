@@ -44,10 +44,13 @@
                             <i class="bi bi-pencil"></i>
                         </a>
                         {% if user.id != session.user_id %}
-                        <a href="#" class="btn btn-outline-danger" title="Eliminar" 
-                           onclick="return confirm('¿Está seguro de eliminar este usuario?')">
-                            <i class="bi bi-trash"></i>
-                        </a>
+                        <form class="d-inline" id="deleteForm{{ user.id }}" action="{{ url_for('users.delete_user', user_id=user.id) }}" method="POST">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                            <button type="button" class="btn btn-outline-danger delete-user-btn" title="Eliminar" 
+                                    data-user-id="{{ user.id }}" data-username="{{ user.username|e }}">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
                         {% endif %}
                     </div>
                 </td>
@@ -64,6 +67,91 @@
 
 {% block extra_js %}
 <script>
-    // Aquí puedes agregar funcionalidad JavaScript si es necesario
+document.addEventListener('DOMContentLoaded', function() {
+    // Función para mostrar alerta
+    function showAlert(message, type = 'success') {
+        const alertDiv = document.createElement('div');
+        alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+        alertDiv.role = 'alert';
+        alertDiv.innerHTML = `
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        `;
+        
+        const main = document.querySelector('main');
+        if (main) {
+            main.insertBefore(alertDiv, main.firstChild);
+            
+            // Auto-dismiss after 5 seconds
+            setTimeout(() => {
+                const bsAlert = new bootstrap.Alert(alertDiv);
+                bsAlert.close();
+            }, 5000);
+        }
+    }
+
+    // Handle delete button clicks using event delegation
+    document.addEventListener('click', function(e) {
+        const deleteBtn = e.target.closest('.delete-user-btn');
+        if (!deleteBtn) return;
+        
+        e.preventDefault();
+        
+        const form = deleteBtn.closest('form');
+        const userId = deleteBtn.dataset.userId;
+        const username = deleteBtn.dataset.username;
+        
+        if (confirm(`¿Está seguro de eliminar el usuario "${username}"? Esta acción no se puede deshacer.`)) {
+            // Show loading state
+            const originalHtml = deleteBtn.innerHTML;
+            deleteBtn.disabled = true;
+            deleteBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+            
+            // Submit the form
+            fetch(form.action, {
+                method: 'POST',
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'X-CSRFToken': form.querySelector('[name=csrf_token]').value,
+                    'Accept': 'application/json',
+                    'Content-Type': 'application/json'
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(err => {
+                        throw new Error(err.message || 'Error en la solicitud');
+                    });
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    // Show success message
+                    showAlert(data.message, 'success');
+                    
+                    // Remove the user row
+                    const row = form.closest('tr');
+                    if (row) {
+                        row.style.transition = 'opacity 0.3s';
+                        row.style.opacity = '0';
+                        setTimeout(() => row.remove(), 300);
+                    } else {
+                        // If row not found, reload the page
+                        window.location.reload();
+                    }
+                } else {
+                    throw new Error(data.message || 'Error al eliminar el usuario');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showAlert('Error: ' + error.message, 'danger');
+                deleteBtn.disabled = false;
+                deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+            });
+        }
+    });
+});
 </script>
 {% endblock %}

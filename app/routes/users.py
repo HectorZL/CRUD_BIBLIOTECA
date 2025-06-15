@@ -202,14 +202,113 @@ def user_history(user_id):
         
         actions = cur.fetchall()
         
-        return render_template('admin/user_history.html', user=user, actions=actions)
-        
+        return render_template('users/history.html', 
+                             user=user, 
+                             actions=actions,
+                             title=f'Historial - {user["username"]}')
     except Exception as e:
-        logger.error(f"Error al cargar historial de usuario {user_id}: {str(e)}", exc_info=True)
+        logger.error(f"Error al cargar historial de usuario: {str(e)}", exc_info=True)
         flash('Error al cargar el historial del usuario', 'error')
         return redirect(url_for('users.manage'))
     finally:
-        if 'cur' in locals():
+        if cur:
             cur.close()
-        if 'conn' in locals():
+        if conn:
             conn.close()
+
+# Ruta para eliminar un usuario
+@bp.route('/<int:user_id>/delete', methods=['POST'])
+@login_required
+@admin_required
+def delete_user(user_id):
+    from flask import current_app
+    conn = None
+    cur = None
+    
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(dictionary=True)
+        
+        # Verificar si el usuario existe
+        cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+        user = cur.fetchone()
+        
+        if not user:
+            return jsonify({'success': False, 'message': 'El usuario no existe'}), 404
+            
+        # No permitir que un usuario se elimine a sí mismo
+        if user_id == session['user_id']:
+            return jsonify({
+                'success': False, 
+                'message': 'No puedes eliminar tu propia cuenta'
+            }), 400
+        
+        # Obtener información del usuario antes de eliminarlo para el registro
+        username = user['username']
+        
+        # Solo iniciar transacción si no hay una en curso
+        if not conn.in_transaction:
+            conn.start_transaction()
+        
+        # Eliminar registros relacionados en book_movements
+        cur.execute("""
+            DELETE FROM book_movements 
+            WHERE user_id = %s
+        """, (user_id,))
+        
+        # Eliminar registros relacionados en loans
+        cur.execute("""
+            DELETE FROM loans 
+            WHERE user_id = %s
+        """, (user_id,))
+        
+        # Eliminar registros relacionados en reservations
+        cur.execute("""
+            DELETE FROM reservations 
+            WHERE user_id = %s
+        """, (user_id,))
+        
+        # Eliminar registros relacionados en user_actions
+        cur.execute("""
+            DELETE FROM user_actions 
+            WHERE user_id = %s
+        """, (user_id,))
+        
+        # Finalmente, eliminar el usuario
+        cur.execute("""
+            DELETE FROM users 
+            WHERE id = %s
+        """, (user_id,))
+        
+        # Registrar la acción
+        cur.execute("""
+            INSERT INTO user_actions (user_id, action_type, description, ip_address)
+            VALUES (%s, 'user_deleted', %s, %s)
+        """, (session['user_id'], 
+              f'Usuario eliminado: {username} (ID: {user_id})', 
+              request.remote_addr))
+        
+        # Confirmar la transacción
+        conn.commit()
+        
+        return jsonify({
+            'success': True, 
+            'message': f'Usuario {username} eliminado correctamente'
+        })
+        
+    except Exception as e:
+        if conn and conn.in_transaction:
+            conn.rollback()
+        current_app.logger.error(f'Error al eliminar usuario: {str(e)}')
+        return jsonify({
+            'success': False, 
+            'message': 'Ocurrió un error al eliminar el usuario. Por favor, inténtalo de nuevo.'
+        }), 500
+    finally:
+        try:
+            if cur:
+                cur.close()
+            if conn and conn.is_connected():
+                conn.close()
+        except Exception as e:
+            current_app.logger.error(f'Error al cerrar la conexión: {str(e)}')
