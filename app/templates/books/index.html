@@ -50,7 +50,7 @@
         <ul class="pagination justify-content-center">
             {% if books.has_prev %}
             <li class="page-item">
-                <a class="page-link" href="{{ url_for('main.books', page=books.prev_num, search=search, genre=selected_genre) }}" aria-label="Anterior">
+                <a class="page-link" href="{{ url_for('books.index', page=books.prev_num, search=search, genre=selected_genre) }}" aria-label="Anterior">
                     <span aria-hidden="true">&laquo;</span>
                 </a>
             </li>
@@ -64,7 +64,7 @@
                 {% if page_num %}
                     {% if page_num != books.page %}
                     <li class="page-item">
-                        <a class="page-link" href="{{ url_for('main.books', page=page_num, search=search, genre=selected_genre) }}">{{ page_num }}</a>
+                        <a class="page-link" href="{{ url_for('books.index', page=page_num, search=search, genre=selected_genre) }}">{{ page_num }}</a>
                     </li>
                     {% else %}
                     <li class="page-item active">
@@ -80,7 +80,7 @@
 
             {% if books.has_next %}
             <li class="page-item">
-                <a class="page-link" href="{{ url_for('main.books', page=books.next_num, search=search, genre=selected_genre) }}" aria-label="Siguiente">
+                <a class="page-link" href="{{ url_for('books.index', page=books.next_num, search=search, genre=selected_genre) }}" aria-label="Siguiente">
                     <span aria-hidden="true">&raquo;</span>
                 </a>
             </li>
@@ -94,7 +94,6 @@
     {% endif %}
 
     {% include 'components/book_modals.html' %}
-    {% include 'loan_modals.html' %}
 </div>
 {% endblock %}
 

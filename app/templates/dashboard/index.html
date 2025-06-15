@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">Panel de Control</h1>
+    
+    <!-- Tarjetas de resumen -->
+    <div class="row">
+        <div class="col-md-4 mb-4">
+            <div class="card text-white bg-primary">
+                <div class="card-body">
+                    <h5 class="card-title">Libros</h5>
+                    <p class="card-text display-4">{{ stats.total_books }}</p>
+                    <a href="{{ url_for('books.index') }}" class="text-white">Ver detalles <i class="fas fa-arrow-right"></i></a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-4">
+            <div class="card text-white bg-success">
+                <div class="card-body">
+                    <h5 class="card-title">Préstamos Activos</h5>
+                    <p class="card-text display-4">{{ stats.active_loans }}</p>
+                    <a href="{{ url_for('loans.index') }}" class="text-white">Ver detalles <i class="fas fa-arrow-right"></i></a>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-4">
+            <div class="card text-white bg-warning">
+                <div class="card-body">
+                    <h5 class="card-title">Libros Disponibles</h5>
+                    <p class="card-text display-4">{{ stats.available_books }}</p>
+                    <a href="{{ url_for('books.index') }}" class="text-white">Ver detalles <i class="fas fa-arrow-right"></i></a>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Sección de préstamos recientes -->
+    <div class="card">
+        <div class="card-header">
+            <h5 class="mb-0">Préstamos Recientes</h5>
+        </div>
+        <div class="card-body">
+            {% if recent_loans %}
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>Libro</th>
+                            <th>Usuario</th>
+                            <th>Fecha de Préstamo</th>
+                            <th>Fecha de Devolución</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for loan in recent_loans %}
+                        <tr>
+                            <td>{{ loan.book_title }}</td>
+                            <td>{{ loan.user_name }}</td>
+                            <td>{{ loan.loan_date.strftime('%Y-%m-%d') }}</td>
+                            <td>{{ loan.return_date.strftime('%Y-%m-%d') if loan.return_date else 'Pendiente' }}</td>
+                            <td>
+                                <span class="badge {{ 'bg-success' if loan.return_date else 'bg-warning' }}">
+                                    {{ 'Devuelto' if loan.return_date else 'Prestado' }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <a href="{{ url_for('loans.index') }}" class="btn btn-primary mt-3">Ver todos los préstamos</a>
+            {% else %}
+            <p>No hay préstamos recientes.</p>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

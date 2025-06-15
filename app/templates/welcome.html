@@ -64,7 +64,7 @@
                             <i class="bi bi-box-arrow-in-right"></i> Iniciar sesión
                         </a>
                         {% if 'user_id' in session %}
-                        <a href="{{ url_for('main.dashboard') }}" class="btn btn-outline-primary btn-welcome">
+                        <a href="{{ url_for('dashboard.home') }}" class="btn btn-outline-primary btn-welcome">
                             <i class="bi bi-speedometer2"></i> Ir al panel
                         </a>
                         {% endif %}

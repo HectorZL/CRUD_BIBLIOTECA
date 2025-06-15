@@ -45,7 +45,7 @@
 document.addEventListener('DOMContentLoaded', function() {
     // Reset filters
     document.getElementById('resetFilters').addEventListener('click', function() {
-        window.location.href = '{{ url_for("main.books") }}';
+        window.location.href = '{{ url_for("books.index") }}';
     });
     
     // Clear search

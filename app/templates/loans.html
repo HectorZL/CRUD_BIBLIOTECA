@@ -29,6 +29,19 @@
     </div>
 
 <script>
+// Función para formatear la fecha como YYYY-MM-DD
+function formatDate(date) {
+    const d = new Date(date);
+    let month = '' + (d.getMonth() + 1);
+    let day = '' + d.getDate();
+    const year = d.getFullYear();
+
+    if (month.length < 2) month = '0' + month;
+    if (day.length < 2) day = '0' + day;
+
+    return [year, month, day].join('-');
+}
+
 // Función para mostrar alertas
 function showAlert(type, title, message) {
     const alertHtml = `
@@ -53,39 +66,86 @@ function showAlert(type, title, message) {
 }
 
 // Función para manejar la devolución de un libro
-function returnBook(loanId, bookTitle) {
-    if (confirm('¿Estás seguro de que deseas marcar como devuelto el libro "' + bookTitle + '"?')) {
-        fetch(`/loans/return/${loanId}`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
-            },
-            body: JSON.stringify({})
-        })
-        .then(response => {
-            if (!response.ok) {
-                return response.json().then(err => { throw new Error(err.message || 'Error al procesar la solicitud'); });
-            }
-            return response.json();
-        })
-        .then(data => {
-            if (data.success) {
-                showAlert('success', '¡Éxito!', 'El libro ha sido marcado como devuelto correctamente.');
-                // Recargar la página después de 1.5 segundos
-                setTimeout(() => {
-                    window.location.reload();
-                }, 1500);
-            } else {
-                throw new Error(data.message || 'Error al procesar la solicitud');
-            }
-        })
-        .catch(error => {
-            console.error('Error:', error);
-            showAlert('danger', 'Error', error.message || 'Ocurrió un error al procesar la solicitud');
-        });
+function returnBook(returnBtn) {
+    const loanId = returnBtn.getAttribute('data-loan-id');
+    const bookTitle = returnBtn.getAttribute('data-book-title');
+    const row = returnBtn.closest('tr');
+    
+    if (!confirm(`¿Estás seguro de que deseas marcar como devuelto el libro "${bookTitle}"?`)) {
+        console.log('Devolución cancelada por el usuario');
+        return;
     }
+    
+    console.log(`Iniciando devolución del préstamo ID: ${loanId}, Libro: ${bookTitle}`);
+    
+    // Mostrar estado de carga
+    const originalBtnText = returnBtn.innerHTML;
+    returnBtn.disabled = true;
+    returnBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Procesando...';
+    
+    // Añadir clase de carga a la fila
+    row.classList.add('table-active');
+    
+    // Realizar la petición
+    fetch(`/loans/${loanId}/return`, {
+        method: 'POST',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+            'X-CSRFToken': document.querySelector('meta[name="csrf-token"]')?.content || ''
+        }
+    })
+    .then(async response => {
+        console.log('Respuesta del servidor:', response);
+        const data = await response.json().catch(() => ({}));
+        
+        if (!response.ok) {
+            throw new Error(data.message || `Error HTTP ${response.status}`);
+        }
+        
+        if (!data.success) {
+            throw new Error(data.message || 'La operación no se completó correctamente');
+        }
+        
+        return data;
+    })
+    .then(data => {
+        console.log('Devolución exitosa:', data);
+        showAlert('success', '¡Éxito!', data.message || 'El libro ha sido marcado como devuelto correctamente.');
+        
+        // Actualizar la interfaz sin recargar toda la página
+        if (row) {
+            // Actualizar el estado en la tabla
+            const statusCell = row.querySelector('td:nth-child(5)');
+            if (statusCell) {
+                statusCell.innerHTML = '<span class="badge bg-secondary">Devuelto</span>';
+            }
+            
+            // Actualizar el botón
+            const actionCell = row.querySelector('td:last-child');
+            if (actionCell) {
+                actionCell.innerHTML = '<span class="text-muted">Devuelto</span>';
+            }
+            
+            // Eliminar la fila después de un tiempo
+            setTimeout(() => {
+                row.style.transition = 'opacity 0.5s';
+                row.style.opacity = '0';
+                setTimeout(() => row.remove(), 500);
+            }, 1000);
+        } else {
+            // Si no se pudo actualizar la interfaz, recargar la página
+            setTimeout(() => window.location.reload(), 1500);
+        }
+    })
+    .catch(error => {
+        console.error('Error en la devolución:', error);
+        showAlert('danger', 'Error', error.message || 'Ocurrió un error al procesar la solicitud');
+        
+        // Restaurar el botón y la fila
+        returnBtn.disabled = false;
+        returnBtn.innerHTML = originalBtnText;
+        row.classList.remove('table-active');
+    });
 }
 
 // Función para manejar la renovación de un préstamo
@@ -124,10 +184,44 @@ function renewLoan(loanId, bookTitle) {
     }
 }
 
+// Función para actualizar la fecha de devolución cuando cambia la fecha de préstamo
+function updateDueDate() {
+    const loanDate = new Date(document.getElementById('loan_date').value);
+    if (isNaN(loanDate.getTime())) return;
+    
+    // Establecer la fecha de devolución a 15 días después de la fecha de préstamo
+    const dueDate = new Date(loanDate);
+    dueDate.setDate(loanDate.getDate() + 15);
+    
+    document.getElementById('due_date').value = formatDate(dueDate);
+    document.getElementById('due_date').min = formatDate(loanDate);
+}
+
 // Inicialización de eventos cuando el DOM esté listo
 document.addEventListener('DOMContentLoaded', function() {
     // Inicializar tooltips
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    
+    // Manejador de eventos para los botones de devolución
+    document.addEventListener('click', function(e) {
+        const returnBtn = e.target.closest('.btn-return');
+        if (returnBtn) {
+            e.preventDefault();
+            returnBook(returnBtn);
+        }
+    });
+    
+    // Configurar el formulario de préstamo
+    const newLoanForm = document.querySelector('#newLoanModal form');
+    if (newLoanForm) {
+        newLoanForm.addEventListener('submit', function(e) {
+            const submitButton = this.querySelector('button[type="submit"]');
+            if (submitButton) {
+                submitButton.disabled = true;
+                submitButton.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Procesando...';
+            }
+        });
+    }
     var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
     });
@@ -164,7 +258,7 @@ document.addEventListener('DOMContentLoaded', function() {
             e.preventDefault();
             const searchInput = this.querySelector('input[name="search"]');
             if (searchInput && searchInput.value.trim() === '') {
-                window.location.href = '{{ url_for("main.loans") }}';
+                window.location.href = '{{ url_for("loans.index") }}';
             } else {
                 this.submit();
             }
@@ -216,7 +310,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     <i class="bi bi-search"></i> Buscar
                 </button>
                 {% if search or status or date_range %}
-                <a href="{{ url_for('main.loans', tab=active_tab) }}" class="btn btn-outline-secondary ms-2">
+                <a href="{{ url_for('loans.index', status=status) }}" class="btn btn-outline-secondary ms-2">
                     <i class="bi bi-x-lg"></i>
                 </a>
                 {% endif %}
@@ -581,7 +675,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <h5 class="modal-title" id="newLoanModalLabel">Nuevo Préstamo</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="POST" action="{{ url_for('main.new_loan') }}">
+            <form method="POST" action="{{ url_for('loans.new') }}">
                 <div class="modal-body">
                     <div class="mb-3">
                         <label for="book_id" class="form-label">Libro *</label>
@@ -592,23 +686,17 @@ document.addEventListener('DOMContentLoaded', function() {
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="mb-3">
-                        <label for="user_id" class="form-label">Usuario *</label>
-                        <select class="form-select" id="user_id" name="user_id" required>
-                            <option value="" selected disabled>Seleccionar usuario...</option>
-                            {% for user in users %}
-                            <option value="{{ user.id }}">{{ user.full_name or user.username }} ({{ user.email }})</option>
-                            {% endfor %}
-                        </select>
-                    </div>
+                    <input type="hidden" name="user_id" value="{{ session.user_id }}">
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="loan_date" class="form-label">Fecha de Préstamo *</label>
-                            <input type="date" class="form-control" id="loan_date" name="loan_date" required>
+                            <input type="date" class="form-control" id="loan_date" name="loan_date" required 
+                                   value="{{ today }}" min="{{ today }}" onchange="updateDueDate()">
                         </div>
                         <div class="col-md-6 mb-3">
                             <label for="due_date" class="form-label">Fecha de Devolución *</label>
-                            <input type="date" class="form-control" id="due_date" name="due_date" required>
+                            <input type="date" class="form-control" id="due_date" name="due_date" required 
+                                   value="{{ due_date }}" min="{{ today }}">
                         </div>
                     </div>
                     <div class="mb-3">
@@ -630,5 +718,5 @@ document.addEventListener('DOMContentLoaded', function() {
 {% include 'loan_modals.html' %}
 {% block extra_js %}
 <!-- CSRF Token para peticiones AJAX -->
-<meta name="csrf-token" content="{{ csrf_token() if csrf_token else '' }}">
+<meta name="csrf-token" content="{{ csrf_token if csrf_token else '' }}">
 {% endblock %}

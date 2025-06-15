@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <title>{% block title %}Sistema de Biblioteca{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
@@ -102,7 +103,7 @@
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('main.dashboard') }}">
+            <a class="navbar-brand" href="{{ url_for('dashboard.home') }}">
                 <i class="bi bi-book"></i> Sistema de Biblioteca
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -146,17 +147,17 @@
                 <div class="position-sticky pt-3">
                     <ul class="nav flex-column">
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'main.dashboard' %}active{% endif %}" href="{{ url_for('main.dashboard') }}">
+                        <a class="nav-link {% if request.endpoint == 'dashboard.home' %}active{% endif %}" href="{{ url_for('dashboard.home') }}">
                             <i class="bi bi-speedometer2"></i> Dashboard
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'main.books' %}active{% endif %}" href="{{ url_for('main.books') }}">
+                        <a class="nav-link {% if request.endpoint == 'books.index' %}active{% endif %}" href="{{ url_for('books.index') }}">
                             <i class="bi bi-book"></i> Libros
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'main.loans' %}active{% endif %}" href="{{ url_for('main.loans') }}">
+                        <a class="nav-link {% if request.endpoint == 'loans.index' %}active{% endif %}" href="{{ url_for('loans.index') }}">
                             <i class="bi bi-arrow-left-right"></i> Préstamos
                         </a>
                     </li>
@@ -165,15 +166,11 @@
                         <h6 class="px-3 text-muted">Administración</h6>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'auth.manage_users' %}active{% endif %}" href="{{ url_for('auth.manage_users') }}">
+                        <a class="nav-link {% if request.endpoint == 'users.manage' %}active{% endif %}" href="{{ url_for('users.manage') }}">
                             <i class="bi bi-people"></i> Usuarios
                         </a>
                     </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'main.manage_genres' %}active{% endif %}" href="{{ url_for('main.manage_genres') }}">
-                            <i class="bi bi-tags"></i> Géneros
-                        </a>
-                    </li>
+
                     {% endif %}
                 </ul>
                 </div>

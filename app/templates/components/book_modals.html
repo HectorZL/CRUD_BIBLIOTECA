@@ -6,7 +6,7 @@
                 <h5 class="modal-title" id="addBookModalLabel">Agregar Nuevo Libro</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="POST" action="{{ url_for('main.add_book') }}" id="addBookForm">
+            <form method="POST" action="{{ url_for('books.add') }}" id="addBookForm">
                 <div class="modal-body">
                     <div class="row g-3">
                         <div class="col-md-6">
@@ -24,7 +24,7 @@
                         <div class="col-md-6">
                             <label for="publication_year" class="form-label">Año de Publicación</label>
                             <input type="number" class="form-control" id="publication_year" name="publication_year" 
-                                   min="1000" max="{{ now.year }}">
+                                   min="1000" max="{{ current_year }}">
                         </div>
                         <div class="col-md-6">
                             <label for="publisher" class="form-label">Editorial</label>
@@ -121,7 +121,7 @@
                 <h5 class="modal-title" id="editBookModalLabel{{ book.id }}">Editar Libro: {{ book.title }}</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <form method="POST" action="{{ url_for('main.edit_book', book_id=book.id) }}" id="editBookForm{{ book.id }}">
+            <form method="POST" action="{{ url_for('books.edit', book_id=book.id) }}" id="editBookForm{{ book.id }}">
                 <div class="modal-body">
                     <div class="row g-3">
                         <div class="col-md-6">
@@ -143,7 +143,7 @@
                             <label for="edit_publication_year_{{ book.id }}" class="form-label">Año de Publicación</label>
                             <input type="number" class="form-control" id="edit_publication_year_{{ book.id }}" 
                                    name="publication_year" value="{{ book.publication_year or '' }}" 
-                                   min="1000" max="{{ now.year }}">
+                                   min="1000" max="{{ current_year }}">
                         </div>
                         <div class="col-md-6">
                             <label for="edit_publisher_{{ book.id }}" class="form-label">Editorial</label>
@@ -205,7 +205,7 @@
             </div>
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <form action="{{ url_for('main.delete_book', book_id=book.id) }}" method="POST" style="display: inline;">
+                <form action="{{ url_for('books.delete', book_id=book.id) }}" method="POST" style="display: inline;">
                     <button type="submit" class="btn btn-danger">Eliminar Libro</button>
                 </form>
             </div>
@@ -223,13 +223,9 @@
             </div>
             <form class="loan-form" data-book-id="{{ book.id }}">
                 <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="user_search{{ book.id }}" class="form-label">Buscar Usuario *</label>
-                        <input type="text" class="form-control user-search" id="user_search{{ book.id }}" 
-                               placeholder="Nombre de usuario o correo" required>
-                        <div id="userSearchResults{{ book.id }}" class="list-group mt-2 d-none"></div>
-                        <input type="hidden" name="user_id" id="selected_user_id{{ book.id }}" required>
-                    </div>
+                    <input type="hidden" name="user_id" value="{{ session.user_id }}">
+                    <input type="hidden" name="book_id" value="{{ book.id }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <div class="row">
                         <div class="col-md-6 mb-3">
                             <label for="loan_date{{ book.id }}" class="form-label">Fecha de Préstamo *</label>
@@ -241,10 +237,6 @@
                             <input type="date" class="form-control" id="due_date{{ book.id }}" 
                                    name="due_date" required>
                         </div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="notes{{ book.id }}" class="form-label">Notas (opcional)</label>
-                        <textarea class="form-control" id="notes{{ book.id }}" name="notes" rows="2"></textarea>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -320,138 +312,90 @@ document.addEventListener('DOMContentLoaded', function() {
         input.min = today;
     });
     
-    // Handle user search in loan forms
-    document.querySelectorAll('.user-search').forEach(input => {
-        input.addEventListener('input', function() {
-            const searchTerm = this.value.trim();
-            const resultsContainer = this.nextElementSibling;
-            const hiddenInput = this.nextElementSibling.nextElementSibling;
-            
-            if (searchTerm.length < 3) {
-                resultsContainer.classList.add('d-none');
-                return;
-            }
-            
-            fetch(`/search/users?q=${encodeURIComponent(searchTerm)}`)
-                .then(response => response.json())
-                .then(users => {
-                    resultsContainer.innerHTML = '';
-                    if (users.length > 0) {
-                        users.forEach(user => {
-                            const userElement = document.createElement('button');
-                            userElement.type = 'button';
-                            userElement.className = 'list-group-item list-group-item-action';
-                            userElement.innerHTML = `
-                                <strong>${user.username}</strong>
-                                ${user.full_name ? `<br><small class="text-muted">${user.full_name}</small>` : ''}
-                                ${user.email ? `<br><small class="text-muted">${user.email}</small>` : ''}
-                            `;
-                            userElement.onclick = function() {
-                                input.value = user.username;
-                                hiddenInput.value = user.id;
-                                resultsContainer.classList.add('d-none');
-                            };
-                            resultsContainer.appendChild(userElement);
-                        });
-                        resultsContainer.classList.remove('d-none');
-                    } else {
-                        resultsContainer.innerHTML = `
-                            <div class="list-group-item">
-                                <small class="text-muted">No se encontraron usuarios</small>
-                            </div>
-                        `;
-                        resultsContainer.classList.remove('d-none');
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    resultsContainer.innerHTML = `
-                        <div class="list-group-item text-danger">
-                            <small>Error al buscar usuarios</small>
-                        </div>
-                    `;
-                    resultsContainer.classList.remove('d-none');
-                });
-        });
-    });
-    
     // Handle loan form submission
     document.querySelectorAll('.loan-form').forEach(form => {
-        form.addEventListener('submit', function(e) {
+        form.addEventListener('submit', async function(e) {
             e.preventDefault();
             
             const formData = new FormData(this);
-            const submitBtn = this.querySelector('button[type="submit"]');
             const bookId = this.dataset.bookId;
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
             
-            // Disable submit button
+            // Show loading state
+            const submitBtn = this.querySelector('button[type="submit"]');
+            const originalBtnText = submitBtn.innerHTML;
             submitBtn.disabled = true;
             submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Procesando...';
             
-            // Send loan request
-            fetch('/loans/new', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
+            try {
+                // Add CSRF token to headers
+                const headers = new Headers();
+                headers.append('X-Requested-With', 'XMLHttpRequest');
+                headers.append('X-CSRFToken', csrfToken);
+                
+                // Send AJAX request
+                const response = await fetch('/loans/new', {
+                    method: 'POST',
+                    body: formData,
+                    headers: headers,
+                    credentials: 'same-origin'
+                });
+                
+                const data = await response.json();
+                console.log('Response data:', data);
+                
+                if (response.ok && data.success) {
                     // Show success message
                     const successAlert = `
                         <div class="alert alert-success alert-dismissible fade show" role="alert">
-                            <i class="bi bi-check-circle-fill"></i> ${data.message}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                            <i class="bi bi-check-circle me-2"></i>
+                            <strong>¡Éxito!</strong> ${data.message || 'El préstamo se ha registrado correctamente.'}
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
                         </div>
                     `;
                     
-                    // Insert alert before the form
-                    this.insertAdjacentHTML('beforebegin', successAlert);
+                    // Insert alert at the top of the form
+                    const formContainer = this.closest('.modal-body');
+                    formContainer.insertAdjacentHTML('afterbegin', successAlert);
                     
-                    // Reset form and close modal after 1.5 seconds
-                    setTimeout(() => {
-                        this.reset();
-                        const modal = bootstrap.Modal.getInstance(document.getElementById(`loanBookModal${bookId}`));
-                        modal.hide();
-                        
-                        // Reload the page to update book availability
-                        window.location.reload();
-                    }, 1500);
-                } else {
-                    // Show error message
-                    const errorAlert = `
-                        <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                            <i class="bi bi-exclamation-triangle-fill"></i> ${data.message}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                        </div>
-                    `;
-                    
-                    // Insert alert before the form
-                    this.insertAdjacentHTML('beforebegin', errorAlert);
-                    
-                    // Re-enable submit button
+                    // Re-enable the submit button
                     submitBtn.disabled = false;
-                    submitBtn.textContent = 'Registrar Préstamo';
+                    submitBtn.innerHTML = originalBtnText;
+                    
+                    // Close modal after 2 seconds
+                    const modal = bootstrap.Modal.getInstance(this.closest('.modal'));
+                    if (modal) {
+                        setTimeout(() => {
+                            modal.hide();
+                            // Reload the page to show updated data
+                            window.location.reload();
+                        }, 2000);
+                    } else {
+                        window.location.reload();
+                    }
+                } else {
+                    throw new Error(data.message || 'Ocurrió un error al procesar el préstamo.');
                 }
-            })
-            .catch(error => {
+            } catch (error) {
                 console.error('Error:', error);
-                const errorMessage = 'Ocurrió un error al procesar la solicitud';
                 
                 // Show error message
                 const errorAlert = `
                     <div class="alert alert-danger alert-dismissible fade show" role="alert">
-                        <i class="bi bi-exclamation-triangle-fill"></i> ${errorMessage}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        <strong>Error:</strong> ${error.message || 'Ocurrió un error inesperado. Por favor, inténtalo de nuevo.'}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Cerrar"></button>
                     </div>
                 `;
                 
-                // Insert alert before the form
-                this.insertAdjacentHTML('beforebegin', errorAlert);
+                // Insert alert at the top of the form
+                const formContainer = this.closest('.modal-body');
+                formContainer.insertAdjacentHTML('afterbegin', errorAlert);
                 
-                // Re-enable submit button
+                // Re-enable the submit button
                 submitBtn.disabled = false;
-                submitBtn.textContent = 'Registrar Préstamo';
-            });
+                submitBtn.innerHTML = originalBtnText;
+            }
         });
     });
     

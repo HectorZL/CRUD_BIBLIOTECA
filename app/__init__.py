@@ -1,6 +1,7 @@
 import os
 import logging
 from flask import Flask, redirect, url_for, flash, session, render_template, jsonify, request
+from flask_wtf.csrf import CSRFProtect, generate_csrf
 from datetime import timedelta
 from dotenv import load_dotenv
 from .db import get_db_connection, get_cursor, init_app as init_db
@@ -32,6 +33,12 @@ def create_app():
         
         logger.info("Configuración de la aplicación cargada")
     
+        # Configurar protección CSRF
+        csrf = CSRFProtect()
+        csrf.init_app(app)
+        app.config['WTF_CSRF_TIME_LIMIT'] = 3600  # 1 hora de validez para el token CSRF
+        app.config['WTF_CSRF_CHECK_DEFAULT'] = False  # Desactivar la verificación global
+        
         # Configuración de SSL si es necesario
         if os.getenv('MYSQL_SSL_MODE') == 'REQUIRED':
             app.config['MYSQL_SSL_MODE'] = 'REQUIRED'
@@ -41,18 +48,21 @@ def create_app():
         try:
             init_db(app)
             logger.info("Base de datos inicializada correctamente")
+            
+            # Configurar contexto para generar tokens CSRF
+            @app.context_processor
+            def inject_csrf_token():
+                return dict(csrf_token=generate_csrf())
         except Exception as e:
             logger.error(f"Error al inicializar la base de datos: {e}", exc_info=True)
             raise
     
         # Registrar blueprints
         try:
-            from . import routes
-            from . import auth
+            # Importar e inicializar las rutas desde el paquete routes
+            from .routes import init_app as init_routes
+            init_routes(app)
             
-            # Registrar blueprints
-            app.register_blueprint(routes.bp)  # No prefix for main routes
-            app.register_blueprint(auth.bp, url_prefix='/auth')  # Auth routes under /auth
             logger.info("Blueprints registrados correctamente")
         except Exception as e:
             logger.error(f"Error al registrar blueprints: {e}", exc_info=True)
