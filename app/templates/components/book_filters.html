@@ -11,17 +11,6 @@
                     </button>
                 </div>
             </div>
-            <div class="col-md-3">
-                <label for="genre" class="form-label">Género</label>
-                <select class="form-select" id="genre" name="genre">
-                    <option value="" {% if not selected_genre %}selected{% endif %}>Todos los géneros</option>
-                    {% for genre in genres %}
-                    <option value="{{ genre.id }}" {% if selected_genre|string == genre.id|string %}selected{% endif %}>
-                        {{ genre.name }}
-                    </option>
-                    {% endfor %}
-                </select>
-            </div>
             <div class="col-md-2 d-flex align-items-end">
                 <button type="submit" class="btn btn-primary w-100">
                     <i class="bi bi-search"></i> Buscar
@@ -51,11 +40,6 @@ document.addEventListener('DOMContentLoaded', function() {
     // Clear search
     document.getElementById('clearSearch').addEventListener('click', function() {
         document.getElementById('search').value = '';
-        document.getElementById('bookFilterForm').submit();
-    });
-    
-    // Submit form on genre change
-    document.getElementById('genre').addEventListener('change', function() {
         document.getElementById('bookFilterForm').submit();
     });
     
