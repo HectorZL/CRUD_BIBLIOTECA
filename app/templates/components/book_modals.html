@@ -31,15 +31,6 @@
                             <input type="text" class="form-control" id="publisher" name="publisher">
                         </div>
                         <div class="col-md-6">
-                            <label for="genre_id" class="form-label">Género</label>
-                            <select class="form-select" id="genre_id" name="genre_id">
-                                <option value="">Seleccionar género...</option>
-                                {% for genre in genres %}
-                                <option value="{{ genre.id }}">{{ genre.name }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        <div class="col-md-6">
                             <label for="total_copies" class="form-label">Número de Copias *</label>
                             <input type="number" class="form-control" id="total_copies" name="total_copies" value="1" min="1" required>
                         </div>
@@ -90,7 +81,6 @@
                                 {% if book.isbn %}<li><strong>ISBN:</strong> {{ book.isbn }}</li>{% endif %}
                                 {% if book.publication_year %}<li><strong>Año:</strong> {{ book.publication_year }}</li>{% endif %}
                                 {% if book.publisher %}<li><strong>Editorial:</strong> {{ book.publisher }}</li>{% endif %}
-                                <li><strong>Género:</strong> {{ book.genre_name or 'No especificado' }}</li>
                                 <li><strong>Copias totales:</strong> {{ book.total_copies }}</li>
                                 <li><strong>Disponibles:</strong> {{ book.available_copies }}</li>
                                 <li><strong>Prestados:</strong> {{ book.total_copies - book.available_copies }}</li>
@@ -149,17 +139,6 @@
                             <label for="edit_publisher_{{ book.id }}" class="form-label">Editorial</label>
                             <input type="text" class="form-control" id="edit_publisher_{{ book.id }}" 
                                    name="publisher" value="{{ book.publisher or '' }}">
-                        </div>
-                        <div class="col-md-6">
-                            <label for="edit_genre_id_{{ book.id }}" class="form-label">Género</label>
-                            <select class="form-select" id="edit_genre_id_{{ book.id }}" name="genre_id">
-                                <option value="">Sin género</option>
-                                {% for genre in genres %}
-                                <option value="{{ genre.id }}" {% if genre.id == book.genre_id %}selected{% endif %}>
-                                    {{ genre.name }}
-                                </option>
-                                {% endfor %}
-                            </select>
                         </div>
                         <div class="col-md-6">
                             <label for="edit_total_copies_{{ book.id }}" class="form-label">Número Total de Copias *</label>
