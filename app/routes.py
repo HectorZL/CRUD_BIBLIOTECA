@@ -15,7 +15,7 @@ bp = Blueprint('main', __name__, url_prefix='')
 @bp.route('/')
 @login_required
 def index():
-    return redirect(url_for('main.dashboard'))
+    return redirect(url_for('dashboard.index'))
 
 # Ruta del dashboard
 @bp.route('/dashboard')
@@ -1045,7 +1045,58 @@ def reports():
         flash('No tienes permiso para acceder a esta sección', 'error')
         return redirect(url_for('main.books'))
     
-    return render_template('reports.html')
+    try:
+        conn = get_db_connection()
+        cur = get_cursor()
+        
+        # Obtener métricas de usuarios
+        cur.execute("""
+            SELECT 
+                COUNT(*) as total_users,
+                SUM(CASE WHEN is_active = 1 THEN 1 ELSE 0 END) as active_users
+            FROM users
+        """)
+        user_metrics = cur.fetchone()
+        
+        # Obtener conteo de préstamos recientes (últimos 30 días)
+        cur.execute("""
+            SELECT COUNT(*) as recent_loans 
+            FROM loans 
+            WHERE loan_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+        """)
+        recent_loans = cur.fetchone()['recent_loans']
+        user_metrics['recent_loans'] = recent_loans
+        
+        # Obtener libros más prestados (últimos 30 días)
+        cur.execute("""
+            SELECT 
+                b.id, 
+                b.title, 
+                b.author,
+                b.available_copies,
+                COUNT(l.id) as loan_count
+            FROM books b
+            LEFT JOIN loans l ON b.id = l.book_id 
+                AND l.loan_date >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+            GROUP BY b.id
+            ORDER BY loan_count DESC
+            LIMIT 10
+        """)
+        monthly_books = cur.fetchall()
+        
+        return render_template('reports/index.html', 
+                             user_metrics=user_metrics,
+                             monthly_books=monthly_books)
+    except Exception as e:
+        logger.error(f"Error en el panel de informes: {str(e)}", exc_info=True)
+        flash('Error al cargar el panel de informes', 'error')
+        return redirect(url_for('main.dashboard'))
+    finally:
+        if 'cur' in locals() and cur is not None:
+            try:
+                cur.close()
+            except Exception as e:
+                logger.error(f"Error al cerrar el cursor: {e}")
 
 # Ruta para generar informes en PDF
 @bp.route('/reports/generate')

@@ -35,7 +35,7 @@ def login():
             session.permanent = True
             
             flash(f'¡Bienvenido de nuevo, {user["username"]}!', 'success')
-            return redirect(url_for('main.index'))
+            return redirect(url_for('dashboard.index'))
             
         except Exception as e:
             flash(f'Error al iniciar sesión: {str(e)}', 'error')

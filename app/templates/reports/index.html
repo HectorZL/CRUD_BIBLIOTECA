@@ -1,0 +1,177 @@
+{% extends "layout.html" %}
+
+{% block title %}Reportes - Sistema de Biblioteca{% endblock %}
+
+{% block content %}
+<div class="container">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1><i class="bi bi-graph-up"></i> Panel de Informes</h1>
+        <div>
+            <button onclick="window.print()" class="btn btn-danger">
+                <i class="bi bi-printer"></i> Imprimir Informe
+            </button>
+        </div>
+    </div>
+
+    <!-- Alertas y mensajes -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <!-- Tarjetas de resumen -->
+    <div class="row mb-4">
+        <div class="col-md-4 mb-3">
+            <div class="card h-100 border-primary">
+                <div class="card-body text-center">
+                    <h2 class="display-4 text-primary">{{ user_metrics.total_users|default(0) }}</h2>
+                    <p class="card-text text-muted">Usuarios Registrados</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-3">
+            <div class="card h-100 border-success">
+                <div class="card-body text-center">
+                    <h2 class="display-4 text-success">{{ user_metrics.active_users|default(0) }}</h2>
+                    <p class="card-text text-muted">Usuarios Activos</p>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-4 mb-3">
+            <div class="card h-100 border-warning">
+                <div class="card-body text-center">
+                    <h2 class="display-4 text-warning">{{ overdue_count|default(0) }}</h2>
+                    <p class="card-text text-muted">Préstamos Vencidos</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sección de reportes -->
+    <div class="card">
+        <div class="card-header bg-primary text-white">
+            <h5 class="mb-0"><i class="bi bi-book"></i> Libros Más Prestados</h5>
+        </div>
+        <div class="card-body">
+            <form method="GET" class="mb-4">
+                <div class="row">
+                    <div class="col-md-4 mb-2">
+                        <label for="start_date" class="form-label">Fecha de Inicio</label>
+                        <input type="date" class="form-control" id="start_date" name="start_date" required>
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <label for="end_date" class="form-label">Fecha de Fin</label>
+                        <input type="date" class="form-control" id="end_date" name="end_date" required>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end mb-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-funnel"></i> Filtrar
+                        </button>
+                    </div>
+                </div>
+            </form>
+
+            {% if books %}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#</th>
+                                <th>Título</th>
+                                <th>Autor</th>
+                                <th class="text-center">Préstamos</th>
+                                <th class="text-center">Disponibles</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for book in books %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td>{{ book.title }}</td>
+                                <td>{{ book.author }}</td>
+                                <td class="text-center">
+                                    <span class="badge bg-primary">{{ book.loan_count or 0 }}</span>
+                                </td>
+                                <td class="text-center">
+                                    <span class="badge bg-{{ 'success' if book.available_copies > 0 else 'danger' }}">
+                                        {{ book.available_copies }}
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            {% else %}
+                <div class="text-center py-4">
+                    <p class="text-muted">No hay datos de préstamos para el rango de fechas seleccionado</p>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Establecer fechas por defecto (últimos 30 días)
+    const today = new Date();
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(today.getDate() - 30);
+    
+    // Formatear fechas para el input date (YYYY-MM-DD)
+    const formatDate = (date) => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+    
+    // Establecer valores por defecto en los inputs de fecha
+    const startDateInput = document.getElementById('start_date');
+    const endDateInput = document.getElementById('end_date');
+    
+    if (startDateInput && endDateInput) {
+        startDateInput.value = formatDate(thirtyDaysAgo);
+        endDateInput.value = formatDate(today);
+        
+        // Establecer fechas mínima y máxima
+        const oneYearAgo = new Date();
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+        
+        startDateInput.min = formatDate(oneYearAgo);
+        endDateInput.min = formatDate(oneYearAgo);
+        startDateInput.max = formatDate(today);
+        endDateInput.max = formatDate(today);
+        
+        // Validar que la fecha de inicio no sea mayor a la de fin
+        startDateInput.addEventListener('change', function() {
+            if (this.value > endDateInput.value) {
+                endDateInput.value = this.value;
+            }
+            endDateInput.min = this.value;
+        });
+        
+        endDateInput.addEventListener('change', function() {
+            if (this.value < startDateInput.value) {
+                startDateInput.value = this.value;
+            }
+            startDateInput.max = this.value;
+        });
+    }
+    
+    // Inicializar tooltips de Bootstrap
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+});
+</script>
+{% endblock %}

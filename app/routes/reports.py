@@ -17,17 +17,113 @@ logger = logging.getLogger(__name__)
 @login_required
 @admin_required
 def index():
-    return render_template('reports/index.html')
+    conn = get_db_connection()
+    cur = get_cursor()
+    
+    try:
+        # Obtener conteo de préstamos vencidos
+        cur.execute("""
+            SELECT COUNT(*) as count 
+            FROM loans 
+            WHERE return_date IS NULL 
+            AND due_date < CURDATE()
+        """)
+        overdue_count = cur.fetchone()['count']
+        
+        # Obtener métricas de usuarios
+        try:
+            # Verificar si existe la columna last_login
+            cur.execute("""
+                SELECT COUNT(*) as col_exists
+                FROM information_schema.COLUMNS 
+                WHERE TABLE_SCHEMA = DATABASE() 
+                AND TABLE_NAME = 'users' 
+                AND COLUMN_NAME = 'last_login'
+            """)
+            
+            col_exists = cur.fetchone()['col_exists']
+            
+            if col_exists:
+                # Si existe last_login, obtener métricas con last_login
+                cur.execute("""
+                    SELECT 
+                        COUNT(*) as total_users,
+                        SUM(CASE WHEN last_login >= DATE_SUB(NOW(), INTERVAL 30 DAY) THEN 1 ELSE 0 END) as active_users
+                    FROM users
+                """)
+                user_metrics = cur.fetchone()
+            else:
+                # Si no existe last_login, solo contar usuarios totales
+                cur.execute("""
+                    SELECT 
+                        COUNT(*) as total_users,
+                        COUNT(*) as active_users
+                    FROM users
+                """)
+                user_metrics = cur.fetchone()
+        except Exception as e:
+            logger.error(f"Error al obtener métricas de usuarios: {str(e)}")
+            # Si hay algún error, usar valores por defecto
+            user_metrics = {'total_users': 0, 'active_users': 0}
+        
+        # Obtener libros más prestados (para el último mes por defecto)
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        query = """
+            SELECT b.id, b.title, b.author, b.available_copies, 
+                   COUNT(l.id) as loan_count
+            FROM loans l
+            JOIN books b ON l.book_id = b.id
+            WHERE 1=1
+        """
+        
+        params = []
+        
+        if start_date and end_date:
+            query += " AND DATE(l.loan_date) BETWEEN %s AND %s"
+            params.extend([start_date, end_date])
+        else:
+            # Por defecto, último mes
+            query += " AND l.loan_date >= DATE_SUB(CURDATE(), INTERVAL 1 MONTH)"
+        
+        query += """
+            GROUP BY b.id, b.title, b.author, b.available_copies
+            ORDER BY loan_count DESC
+            LIMIT 10
+        """
+        
+        cur.execute(query, params)
+        books = cur.fetchall()
+        
+        # Si es una petición AJAX, devolver JSON
+        if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+            return jsonify({
+                'overdue_count': overdue_count,
+                'user_metrics': user_metrics,
+                'books': books
+            })
+            
+        return render_template('reports/index.html',
+                           overdue_count=overdue_count,
+                           user_metrics=user_metrics,
+                           books=books)
+                           
+    except Exception as e:
+        logger.error(f"Error en el panel de informes: {e}")
+        flash('Error al cargar el panel de informes', 'error')
+        return redirect(url_for('dashboard.index'))
+    finally:
+        conn.close()
 
-# Ruta para generar informes
-@bp.route('/generate', methods=['POST'])
+# Ruta para generar informes en PDF
+@bp.route('/generate/<report_type>')
 @login_required
 @admin_required
-def generate():
-    report_type = request.form.get('report_type')
-    start_date = request.form.get('start_date')
-    end_date = request.form.get('end_date')
-    output_format = request.form.get('format', 'html')
+def generate(report_type):
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    output_format = request.args.get('format', 'pdf')
     
     if not report_type:
         flash('Seleccione un tipo de informe', 'error')

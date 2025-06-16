@@ -89,7 +89,7 @@ def books():
     except Exception as e:
         print(f"Error in books route: {str(e)}")
         flash('Ocurrió un error al cargar los libros', 'error')
-        return redirect(url_for('main.dashboard'))
+        return redirect(url_for('dashboard.index'))
     finally:
         if 'cur' in locals():
             cur.close()

@@ -74,7 +74,7 @@ def create_app():
             try:
                 if 'user_id' not in session:
                     return redirect(url_for('auth.login'))
-                return redirect(url_for('main.dashboard'))
+                return redirect(url_for('dashboard.index'))
             except Exception as e:
                 logger.error(f"Error en la ruta principal: {e}", exc_info=True)
                 return render_template('errors/500.html'), 500
