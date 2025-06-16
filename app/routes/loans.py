@@ -156,6 +156,47 @@ def new():
             conn = get_db_connection()
             cur = get_cursor()
             
+            # Verificar si el usuario está suspendido o baneado
+            logger.debug(f"Verificando estado de suspensión para el usuario: {username}")
+            cur.execute("""
+                SELECT is_banned, suspension_type, 
+                       COALESCE(suspension_until, '2000-01-01') as suspension_until
+                FROM users 
+                WHERE id = %s
+            """, (user_id,))
+            user_status = cur.fetchone()
+            
+            if not user_status:
+                error_msg = 'Usuario no encontrado'
+                logger.warning(f"{error_msg} - ID: {user_id}")
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({
+                        'success': False,
+                        'message': error_msg
+                    }), 400
+                flash(error_msg, 'error')
+                return redirect(request.referrer or url_for('books.index'))
+                
+            current_time = datetime.now()
+            is_suspended = (
+                user_status['is_banned'] or
+                (user_status['suspension_type'] == 'temporary' and 
+                 user_status['suspension_until'] > current_time) or
+                user_status['suspension_type'] == 'permanent'
+            )
+            
+            if is_suspended:
+                error_msg = 'Su cuenta está suspendida. No puede realizar préstamos.'
+                logger.warning(f"Usuario suspendido intentó hacer un préstamo - ID: {user_id}")
+                if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+                    return jsonify({
+                        'success': False,
+                        'message': error_msg,
+                        'is_suspended': True
+                    }), 403
+                flash(error_msg, 'error')
+                return redirect(request.referrer or url_for('books.index'))
+            
             # Obtener información del libro
             logger.debug(f"Verificando disponibilidad del libro ID: {book_id}")
             cur.execute("""

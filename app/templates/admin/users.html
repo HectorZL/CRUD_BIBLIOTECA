@@ -21,6 +21,7 @@
                 <th>Nombre Completo</th>
                 <th>Email</th>
                 <th>Rol</th>
+                <th>Estado</th>
                 <th>Acciones</th>
             </tr>
         </thead>
@@ -33,9 +34,16 @@
                 <td>{{ user.email }}</td>
                 <td>
                     {% if user.is_admin %}
-                    <span class="badge bg-primary">Administrador</span>
+                        <span class="badge bg-primary">Administrador</span>
                     {% else %}
-                    <span class="badge bg-secondary">Usuario</span>
+                        <span class="badge bg-secondary">Usuario</span>
+                    {% endif %}
+                </td>
+                <td>
+                    {% if user.is_banned %}
+                        <span class="badge bg-danger">Baneado - No puede prestar</span>
+                    {% else %}
+                        <span class="badge bg-success">Puede prestar</span>
                     {% endif %}
                 </td>
                 <td>
@@ -44,13 +52,20 @@
                             <i class="bi bi-pencil"></i>
                         </a>
                         {% if user.id != session.user_id %}
-                        <form class="d-inline" id="deleteForm{{ user.id }}" action="{{ url_for('users.delete_user', user_id=user.id) }}" method="POST">
-                            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                            <button type="button" class="btn btn-outline-danger delete-user-btn" title="Eliminar" 
-                                    data-user-id="{{ user.id }}" data-username="{{ user.username|e }}">
-                                <i class="bi bi-trash"></i>
+                            <button type="button" class="btn btn-sm {{ 'btn-success' if user.is_banned else 'btn-danger' }} toggle-ban-btn" 
+                                    title="{{ 'Quitar restricción' if user.is_banned else 'Suspender usuario' }}"
+                                    data-user-id="{{ user.id }}" 
+                                    data-username="{{ user.username|e }}"
+                                    data-is-banned="{{ '1' if user.is_banned else '0' }}">
+                                <i class="bi {{ 'bi-unlock' if user.is_banned else 'bi-slash-circle' }}"></i>
                             </button>
-                        </form>
+                            <form class="d-inline" id="deleteForm{{ user.id }}" action="{{ url_for('users.delete_user', user_id=user.id) }}" method="POST">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                <button type="button" class="btn btn-outline-danger delete-user-btn" title="Eliminar" 
+                                        data-user-id="{{ user.id }}" data-username="{{ user.username|e }}">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </form>
                         {% endif %}
                     </div>
                 </td>
@@ -65,8 +80,113 @@
 </div>
 {% endblock %}
 
+
+
 {% block extra_js %}
 <script>
+// Toggle ban button handler
+document.addEventListener('DOMContentLoaded', function() {
+    // Handle toggle ban button clicks
+    document.addEventListener('click', function(e) {
+        const toggleBanBtn = e.target.closest('.toggle-ban-btn');
+        if (!toggleBanBtn) return;
+        
+        e.preventDefault();
+        
+        const userId = toggleBanBtn.dataset.userId;
+        const username = toggleBanBtn.dataset.username;
+        const isBanned = toggleBanBtn.dataset.isBanned === '1';
+        const action = isBanned ? 'unban' : 'ban';
+        
+        // Show confirmation dialog
+        const confirmMessage = isBanned 
+            ? `¿Está seguro de quitar la restricción al usuario "${username}"?`
+            : `¿Está seguro de suspender al usuario "${username}"?`;
+        
+        if (!confirm(confirmMessage)) return;
+        
+        // Show loading state
+        const originalHtml = toggleBanBtn.innerHTML;
+        toggleBanBtn.disabled = true;
+        toggleBanBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+        
+        // Send request to ban/unban user
+        const url = `/users/${action}/${userId}`;
+        fetch(url, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({})
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => {
+                    throw new Error(err.message || 'Error en la solicitud');
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                // Toggle the button state
+                const newIsBanned = !isBanned;
+                toggleBanBtn.dataset.isBanned = newIsBanned ? '1' : '0';
+                toggleBanBtn.title = newIsBanned ? 'Quitar restricción' : 'Suspender usuario';
+                toggleBanBtn.className = `btn btn-sm ${newIsBanned ? 'btn-success' : 'btn-danger'} toggle-ban-btn`;
+                toggleBanBtn.innerHTML = `<i class="bi ${newIsBanned ? 'bi-unlock' : 'bi-slash-circle'}"></i>`;
+                
+                // Update status badge
+                const statusBadge = toggleBanBtn.closest('tr').querySelector('.status-badge');
+                if (statusBadge) {
+                    statusBadge.textContent = newIsBanned ? 'Baneado - No puede prestar' : 'Puede prestar';
+                    statusBadge.className = `badge ${newIsBanned ? 'bg-danger' : 'bg-success'}`;
+                }
+                
+                showAlert(data.message, 'success');
+            } else {
+                throw new Error(data.message || `Error al ${action} el usuario`);
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlert('Error: ' + error.message, 'danger');
+        })
+        .finally(() => {
+            toggleBanBtn.disabled = false;
+            toggleBanBtn.innerHTML = `<i class="bi ${isBanned ? 'bi-unlock' : 'bi-slash-circle'}"></i>`;
+        });
+    });
+    
+
+});
+</script>
+
+<script>
+// Function to show alert message
+function showAlert(message, type = 'success') {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.role = 'alert';
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    `;
+    
+    const main = document.querySelector('main');
+    if (main) {
+        main.insertBefore(alertDiv, main.firstChild);
+        
+        // Auto-dismiss after 5 seconds
+        setTimeout(() => {
+            const bsAlert = new bootstrap.Alert(alertDiv);
+            bsAlert.close();
+        }, 5000);
+    }
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     // Función para mostrar alerta
     function showAlert(message, type = 'success') {
@@ -90,6 +210,90 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    // Handle toggle loan permission button
+    document.addEventListener('click', function(e) {
+        const toggleBtn = e.target.closest('.toggle-loan-btn');
+        if (!toggleBtn) return;
+        
+        e.preventDefault();
+        
+        const userId = toggleBtn.dataset.userId;
+        const username = toggleBtn.dataset.username;
+        const currentState = toggleBtn.dataset.currentState === '1';
+        const newState = !currentState;
+        
+        // Show confirmation for disabling loans
+        if (!newState && !confirm(`¿Está seguro de deshabilitar los préstamos para el usuario "${username}"?`)) {
+            return;
+        }
+        
+        // Show loading state
+        const originalHtml = toggleBtn.innerHTML;
+        toggleBtn.disabled = true;
+        toggleBtn.innerHTML = '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>';
+        
+        // Send request to update loan permission
+        fetch(`/users/${userId}/toggle-loan-permission`, {
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRFToken': '{{ csrf_token }}',
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                can_loan: newState
+            })
+        })
+        .then(response => {
+            if (!response.ok) {
+                return response.json().then(err => {
+                    throw new Error(err.message || 'Error en la solicitud');
+                });
+            }
+            return response.json();
+        })
+        .then(data => {
+            if (data.success) {
+                // Update UI
+                toggleBtn.dataset.currentState = newState ? '1' : '0';
+                toggleBtn.title = newState ? 'Deshabilitar préstamos' : 'Habilitar préstamos';
+                toggleBtn.classList.toggle('btn-success', newState);
+                toggleBtn.classList.toggle('btn-outline-danger', !newState);
+                toggleBtn.classList.toggle('btn-outline-success', false);
+                toggleBtn.classList.toggle('btn-danger', !newState);
+                
+                // Update icon
+                const icon = toggleBtn.querySelector('i');
+                if (icon) {
+                    icon.className = newState ? 'bi bi-check-circle' : 'bi bi-x-circle';
+                }
+                
+                // Update status badge
+                const statusBadge = toggleBtn.closest('tr').querySelector('.badge');
+                if (statusBadge) {
+                    statusBadge.textContent = newState ? 'Puede prestar' : 'No puede prestar';
+                    statusBadge.className = newState ? 'badge bg-success' : 'badge bg-danger';
+                }
+                
+                // Show success message
+                const message = newState 
+                    ? `Se habilitaron los préstamos para el usuario ${username}` 
+                    : `Se deshabilitaron los préstamos para el usuario ${username}`;
+                showAlert(message, 'success');
+            } else {
+                throw new Error(data.message || 'Error al actualizar el permiso de préstamo');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showAlert('Error: ' + error.message, 'danger');
+        })
+        .finally(() => {
+            toggleBtn.disabled = false;
+            toggleBtn.innerHTML = originalHtml;
+        });
+    });
+    
     // Handle delete button clicks using event delegation
     document.addEventListener('click', function(e) {
         const deleteBtn = e.target.closest('.delete-user-btn');

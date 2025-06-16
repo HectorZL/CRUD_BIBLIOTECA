@@ -24,9 +24,10 @@ def manage():
         # Obtener todos los usuarios
         cur.execute("""
             SELECT u.*, 
+                   COALESCE(u.puede_prestar, TRUE) as puede_prestar,
                    (SELECT username FROM users WHERE id = u.banned_by) as banned_by_name
             FROM users u
-            ORDER BY u.is_banned DESC, u.username
+            ORDER BY u.username
         """)
         
         users = cur.fetchall()
@@ -42,106 +43,155 @@ def manage():
         if conn:
             conn.close()
 
-# Ruta para restringir un usuario (ban)
+# Ruta para restringir un usuario (ban/suspender)
 @bp.route('/ban/<int:user_id>', methods=['POST'])
 @login_required
 @admin_required
 def ban_user(user_id):
-    if not request.form.get('reason'):
-        flash('Debe especificar un motivo para la restricción', 'error')
-        return redirect(url_for('users.manage'))
-        
-    duration = int(request.form.get('duration', 0))  # 0 = indefinido
-    reason = request.form.get('reason')
-    details = request.form.get('details', '')
-    
-    conn = None
-    cur = None
-    
     try:
+        duration = 0  # Permanent ban by default
+        reason = 'Suspended by administrator'  # Default reason
+        details = ''
+        suspension_type = 'permanent'
+        
         conn = get_db_connection()
         cur = get_cursor()
         
         # Verificar que el usuario existe y no es administrador
         cur.execute("""
-            SELECT id, is_admin FROM users 
-            WHERE id = %s AND is_admin = 0
+            SELECT id, is_admin, username FROM users 
+            WHERE id = %s
         """, (user_id,))
         user = cur.fetchone()
         
         if not user:
-            flash('Usuario no encontrado o no se puede restringir a un administrador', 'error')
+            error_msg = 'Usuario no encontrado'
+            if request.is_json:
+                return jsonify({'success': False, 'message': error_msg}), 404
+            flash(error_msg, 'error')
             return redirect(url_for('users.manage'))
             
-        # Calcular fecha de expiración
+        if user['is_admin']:
+            error_msg = 'No se puede restringir a un administrador'
+            if request.is_json:
+                return jsonify({'success': False, 'message': error_msg}), 403
+            flash(error_msg, 'error')
+            return redirect(url_for('users.manage'))
+        
+        # Calcular fechas de expiración
+        now = datetime.now()
         ban_expires_at = None
+        
         if duration > 0:
-            ban_expires_at = datetime.now() + timedelta(days=duration)
+            ban_expires_at = now + timedelta(days=duration)
         
         # Actualizar usuario
         cur.execute("""
             UPDATE users 
             SET is_banned = TRUE,
+                suspension_type = %s,
                 ban_reason = %s,
                 ban_expires_at = %s,
-                banned_at = NOW(),
+                banned_at = %s,
                 banned_by = %s
             WHERE id = %s
-        """, (reason, ban_expires_at, session['user_id'], user_id))
-        
-        conn.commit()
+        """, (
+            suspension_type,
+            reason,
+            ban_expires_at,
+            now,
+            session['user_id'],
+            user_id
+        ))
         
         # Registrar la acción
+        action_description = f"Usuario {user['username']} ({user_id}) restringido"
+        if duration > 0:
+            action_description += f" por {duration} días"
+        else:
+            action_description += " indefinidamente"
+            
         cur.execute("""
             INSERT INTO user_actions (user_id, action_type, description, ip_address)
             VALUES (%s, 'user_banned', %s, %s)
-        """, (session['user_id'], 
-              f'Usuario {user_id} restringido. Motivo: {reason}', 
-              request.remote_addr))
+        """, (session['user_id'], action_description, request.remote_addr))
+        
         conn.commit()
         
-        duration_text = 'indefinidamente' if not ban_expires_at else f'por {duration} días'
-        flash(f'Usuario restringido {duration_text}.', 'success')
+        duration_text = 'indefinidamente' if duration == 0 else f'por {duration} días'
+        success_msg = f'Usuario {user["username"]} restringido {duration_text}.'
         
+        if request.is_json:
+            return jsonify({
+                'success': True, 
+                'message': success_msg,
+                'user': {
+                    'id': user_id,
+                    'is_banned': True,
+                    'suspension_type': suspension_type,
+                    'ban_expires_at': ban_expires_at.isoformat() if ban_expires_at else None
+                }
+            })
+            
+        flash(success_msg, 'success')
+        
+    except ValueError as e:
+        error_msg = 'Duración de suspensión no válida'
+        if request.is_json:
+            return jsonify({'success': False, 'message': error_msg}), 400
+        flash(error_msg, 'error')
     except Exception as e:
         logger.error(f"Error al restringir usuario: {str(e)}", exc_info=True)
-        if conn:
+        if 'conn' in locals() and conn:
             conn.rollback()
-        flash('Ocurrió un error al procesar la restricción', 'error')
+        error_msg = 'Ocurrió un error al procesar la restricción'
+        if request.is_json:
+            return jsonify({'success': False, 'message': error_msg}), 500
+        flash(error_msg, 'error')
     finally:
-        if cur:
+        if 'cur' in locals() and cur:
             cur.close()
-        if conn:
+        if 'conn' in locals() and conn:
             conn.close()
     
     return redirect(url_for('users.manage'))
 
-# Ruta para quitar restricción a un usuario (unban)
+# Ruta para quitar restricción a un usuario (unban/activar)
 @bp.route('/unban/<int:user_id>', methods=['POST'])
 @login_required
 @admin_required
 def unban_user(user_id):
-    conn = None
-    cur = None
-    
     try:
         conn = get_db_connection()
         cur = get_cursor()
         
-        # Verificar que el usuario existe y está baneado
+        # Obtener información del usuario antes de actualizar
         cur.execute("""
-            SELECT id FROM users 
-            WHERE id = %s AND is_banned = TRUE
+            SELECT id, username, is_banned FROM users 
+            WHERE id = %s
         """, (user_id,))
         
-        if not cur.fetchone():
-            flash('Usuario no encontrado o no está restringido', 'warning')
+        user = cur.fetchone()
+        
+        if not user:
+            error_msg = 'Usuario no encontrado'
+            if request.is_json:
+                return jsonify({'success': False, 'message': error_msg}), 404
+            flash(error_msg, 'warning')
+            return redirect(url_for('users.manage'))
+            
+        if not user['is_banned']:
+            error_msg = 'El usuario no está restringido'
+            if request.is_json:
+                return jsonify({'success': False, 'message': error_msg}), 400
+            flash(error_msg, 'warning')
             return redirect(url_for('users.manage'))
             
         # Quitar restricción
         cur.execute("""
             UPDATE users 
             SET is_banned = FALSE,
+                suspension_type = 'none',
                 ban_reason = NULL,
                 ban_expires_at = NULL,
                 banned_at = NULL,
@@ -149,31 +199,115 @@ def unban_user(user_id):
             WHERE id = %s
         """, (user_id,))
         
-        conn.commit()
-        
         # Registrar la acción
         cur.execute("""
             INSERT INTO user_actions (user_id, action_type, description, ip_address)
             VALUES (%s, 'user_unbanned', %s, %s)
-        """, (session['user_id'], 
-              f'Se quitó la restricción al usuario {user_id}', 
-              request.remote_addr))
+        """, (
+            session['user_id'],
+            f'Se quitó la restricción al usuario {user["username"]} ({user_id})',
+            request.remote_addr
+        ))
+        
         conn.commit()
         
-        flash('Restricción eliminada correctamente', 'success')
+        success_msg = f'Se quitó la restricción al usuario {user["username"]}.'
+        
+        if request.is_json:
+            return jsonify({
+                'success': True, 
+                'message': success_msg,
+                'user': {
+                    'id': user_id,
+                    'is_banned': False,
+                    'suspension_type': 'none'
+                }
+            })
+            
+        flash(success_msg, 'success')
         
     except Exception as e:
         logger.error(f"Error al quitar restricción de usuario: {str(e)}", exc_info=True)
+        if 'conn' in locals() and conn:
+            conn.rollback()
+        error_msg = 'Ocurrió un error al quitar la restricción'
+        if request.is_json:
+            return jsonify({'success': False, 'message': error_msg}), 500
+        flash(error_msg, 'error')
+    finally:
+        if 'cur' in locals() and cur:
+            cur.close()
+        if 'conn' in locals() and conn:
+            conn.close()
+    
+    return redirect(url_for('users.manage'))
+
+# Ruta para cambiar el permiso de préstamo de un usuario
+@bp.route('/<int:user_id>/toggle-loan-permission', methods=['POST'])
+@login_required
+@admin_required
+def toggle_loan_permission(user_id):
+    if not request.is_json:
+        return jsonify({'success': False, 'message': 'Solicitud inválida'}), 400
+    
+    data = request.get_json()
+    can_loan = data.get('can_loan', False)
+    
+    conn = None
+    cur = None
+    try:
+        conn = get_db_connection()
+        cur = get_cursor()
+        
+        # Verificar que el usuario existe y no es un administrador
+        cur.execute("""
+            SELECT id, is_admin FROM users WHERE id = %s
+        """, (user_id,))
+        user = cur.fetchone()
+        
+        if not user:
+            return jsonify({'success': False, 'message': 'Usuario no encontrado'}), 404
+            
+        if user['is_admin']:
+            return jsonify({'success': False, 'message': 'No se puede modificar un administrador'}), 403
+        
+        # Actualizar el permiso de préstamo
+        cur.execute("""
+            UPDATE users 
+            SET puede_prestar = %s
+            WHERE id = %s
+        """, (can_loan, user_id))
+        
+        # Registrar la acción
+        action = 'habilitó préstamos' if can_loan else 'deshabilitó préstamos'
+        cur.execute("""
+            INSERT INTO user_actions (user_id, action_type, description, ip_address)
+            VALUES (%s, 'update_loan_permission', %s, %s)
+        """, (session['user_id'], 
+              f'Se {action} para el usuario ID {user_id}',
+              request.remote_addr))
+        
+        conn.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Se ha {action} para el usuario',
+            'can_loan': can_loan
+        })
+        
+    except Exception as e:
         if conn:
             conn.rollback()
-        flash('Ocurrió un error al quitar la restricción', 'error')
+        logger.error(f"Error al cambiar permiso de préstamo: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': 'Error al actualizar el permiso de préstamo: ' + str(e)
+        }), 500
     finally:
         if cur:
             cur.close()
         if conn:
             conn.close()
-    
-    return redirect(url_for('users.manage'))
 
 # Ruta para ver el historial de acciones de un usuario
 @bp.route('/<int:user_id>/history')
